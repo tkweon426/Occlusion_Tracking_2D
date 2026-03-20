@@ -3,6 +3,17 @@ A simulation setup for Occlusion aware tracking on a 2D scene for optimal contro
 
 ## Setting up the Repository
 
+Clone the repository first:
+```
+git clone https://github.com/tkweon426/Occlusion_Tracking_2D/edit/main/README.md
+```
+
+Setup the conda environment file
 ```
 conda env create -f environment.yml
+```
+
+Activate the conda environment 
+```
+conda activate tracking_sim
 ```
