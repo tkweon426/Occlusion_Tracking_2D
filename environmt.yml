@@ -1,0 +1,15 @@
+name: tracking_sim
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy
+  - matplotlib
+  - casadi        # Extremely powerful for nonlinear optimal control and trajectory optimization
+  - cvxpy         # Great if you formulate this as a convex Model Predictive Control (MPC) problem
+  - jupyter       # Useful for prototyping and sharing visual results with teammates
+  - pip
+  - pip:
+    - control     # Standard Python control systems library
