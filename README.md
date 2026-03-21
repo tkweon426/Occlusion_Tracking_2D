@@ -17,3 +17,8 @@ Activate the conda environment
 ```
 conda activate tracking_sim
 ```
+
+## Running the Code
+```
+python3 main.py
+```
