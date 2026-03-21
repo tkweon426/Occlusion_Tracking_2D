@@ -213,5 +213,6 @@ dependencies:
   - zstd=1.5.7=hbf9d68e_6
   - pip:
       - control==0.10.2
+      - opencv-python==4.13.0.92
       - pygame==2.6.1
 prefix: /opt/anaconda3/envs/tracking_sim
