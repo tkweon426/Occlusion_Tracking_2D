@@ -6,10 +6,10 @@ from controllers.basic_tracker import basic_chase_controller
 from visualization.renderer import PygameRenderer
 
 def main():
-    dt = 0.05 
+    dt = 0.01 
     
     # Initialize components
-    drone = TopDownQuadrotor(x=0.0, y=0.0)
+    drone = TopDownQuadrotor(x=0.0, y=0.0, mass=1.0, I_zz=0.02)
     evader = Evader(x=5.0, y=5.0)
     renderer = PygameRenderer()
     
