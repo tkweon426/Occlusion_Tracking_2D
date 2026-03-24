@@ -8,13 +8,14 @@ class TopDownQuadrotor:
         self.I_zz = I_zz
         self.g = 9.81
         
-        # State: [x, y, psi, x_dot, y_dot, psi_dot]
+        # states: [x, y, psi, x_dot, y_dot, psi_dot]
         self.state = np.array([x, y, 0.0, 0.0, 0.0, 0.0], dtype=float)
 
     def _continuous_dynamics(self, state, action):
         x, y, psi, x_dot, y_dot, psi_dot = state
         theta, phi, tau_z = action
         
+        # drone dynamics for level flight
         x_ddot = self.g * (np.tan(theta) * np.cos(psi) - np.tan(phi) * np.sin(psi))
         y_ddot = self.g * (np.tan(theta) * np.sin(psi) + np.tan(phi) * np.cos(psi))
         psi_ddot = tau_z / self.I_zz
@@ -22,5 +23,5 @@ class TopDownQuadrotor:
         return np.array([x_dot, y_dot, psi_dot, x_ddot, y_ddot, psi_ddot])
 
     def step(self, action, dt):
-        """Advances the quadrotor state by dt using RK4."""
+        # advance state using rk4 integrator
         self.state = rk4_step(self._continuous_dynamics, self.state, action, dt)

@@ -25,10 +25,33 @@ class PygameRenderer:
         screen_y = int(self.offset_y - y * self.scale) 
         return screen_x, screen_y
 
+    def _draw_grid(self):
+        """Draws thin grey gridlines every 10 metres."""
+        grid_color = (200, 200, 200)
+        grid_spacing_m = 10  # metres
+        grid_spacing_px = grid_spacing_m * self.scale
+
+        # Vertical lines
+        start_x = self.offset_x % grid_spacing_px
+        x = start_x
+        while x <= self.width:
+            pygame.draw.line(self.screen, grid_color, (int(x), 0), (int(x), self.height))
+            x += grid_spacing_px
+
+        # Horizontal lines
+        start_y = self.offset_y % grid_spacing_px
+        y = start_y
+        while y <= self.height:
+            pygame.draw.line(self.screen, grid_color, (0, int(y)), (self.width, int(y)))
+            y += grid_spacing_px
+
     def draw(self, drone_state, evader_state):
         # Fill the background with white
         self.screen.fill((255, 255, 255))
-        
+
+        # Draw gridlines
+        self._draw_grid()
+
         # 1. Draw Evader (Red Circle)
         ex, ey = evader_state
         sx, sy = self._world_to_screen(ex, ey)
