@@ -2,21 +2,19 @@
 import pygame
 from models.planar_quadrotor import TopDownQuadrotor
 from models.evader import Evader
-from controllers.basic_tracker import basic_chase_controller
 from visualization.renderer import PygameRenderer
-from environments.single_circle import make_single_circle_env
-
-DRONE_RADIUS  = 0.5  # metres
-EVADER_RADIUS = 0.3  # metres
+import args
 
 def main():
-    dt = 0.01
+    dt = args.DT
 
     # Initialize components
-    drone = TopDownQuadrotor(x=0.0, y=0.0, mass=1.0, I_zz=0.02)
-    evader = Evader(x=0.0, y=5.0)
-    renderer = PygameRenderer()
-    env = make_single_circle_env()
+    drone = TopDownQuadrotor(x=args.DRONE_START[0], y=args.DRONE_START[1],
+                             mass=args.DRONE_MASS, I_zz=args.DRONE_I_ZZ)
+    evader = Evader(x=args.EVADER_START[0], y=args.EVADER_START[1])
+    renderer = PygameRenderer(width=args.RENDERER_WIDTH, height=args.RENDERER_HEIGHT,
+                               scale=args.RENDERER_SCALE)
+    env = args.ENV_FACTORY()
 
     # Clock to manage simulation speed
     clock = pygame.time.Clock()
@@ -48,17 +46,17 @@ def main():
             if keys[pygame.K_d]: vx = evader.speed
 
             # 3. Control Logic for Drone
-            drone_action = basic_chase_controller(drone.state, evader.state)
+            drone_action = args.CONTROLLER(drone.state, evader.state)
 
             # 4. Step Physics
             evader.step(vx, vy, dt)
             drone.step(drone_action, dt)
 
             # 5. Collision Check
-            if env.check_collision(drone.state[0], drone.state[1], DRONE_RADIUS):
+            if env.check_collision(drone.state[0], drone.state[1], args.DRONE_RADIUS):
                 collided = True
                 collision_msg = "DRONE COLLISION"
-            elif env.check_collision(evader.state[0], evader.state[1], EVADER_RADIUS):
+            elif env.check_collision(evader.state[0], evader.state[1], args.EVADER_RADIUS):
                 collided = True
                 collision_msg = "EVADER COLLISION"
 
