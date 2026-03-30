@@ -1,4 +1,6 @@
 # main.py
+# hello chenyu, this is thomas
+
 import pygame
 from models.planar_quadrotor import TopDownQuadrotor
 from models.evader import Evader
