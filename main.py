@@ -1,5 +1,4 @@
 # main.py
-# hello chenyu, this is thomas
 
 import pygame
 from models.planar_quadrotor import TopDownQuadrotor
@@ -21,7 +20,12 @@ def main():
     # Clock to manage simulation speed
     clock = pygame.time.Clock()
 
-    print("Simulation starting. Use W/A/S/D to move the evader.")
+    scripted = args.EVADER_CONTROLLER  # None → keyboard, object → scripted
+
+    if scripted is None:
+        print("Simulation starting. Use W/A/S/D to move the evader.")
+    else:
+        print("Simulation starting. Evader is following a scripted trajectory.")
     print("Close the window or press Q to quit.")
 
     running = True
@@ -38,14 +42,16 @@ def main():
                     running = False
 
         if not collided:
-            # 2. Handle Continuous Keyboard Input for Evader
-            keys = pygame.key.get_pressed()
-            vx, vy = 0.0, 0.0
-
-            if keys[pygame.K_w]: vy = evader.speed
-            if keys[pygame.K_s]: vy = -evader.speed
-            if keys[pygame.K_a]: vx = -evader.speed
-            if keys[pygame.K_d]: vx = evader.speed
+            # 2. Get evader velocity from keyboard or scripted trajectory
+            if scripted is None:
+                keys = pygame.key.get_pressed()
+                vx, vy = 0.0, 0.0
+                if keys[pygame.K_w]: vy = evader.speed
+                if keys[pygame.K_s]: vy = -evader.speed
+                if keys[pygame.K_a]: vx = -evader.speed
+                if keys[pygame.K_d]: vx = evader.speed
+            else:
+                vx, vy = scripted.get_velocity(evader.state)
 
             # 3. Control Logic for Drone
             drone_action = args.CONTROLLER(drone.state, evader.state)

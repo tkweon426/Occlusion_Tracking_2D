@@ -3,8 +3,17 @@
 # Edit this file to change the environment, controller, or any simulation settings.
 
 # --- Environment ---
+"""
+List of environments
+= make_empty_env            -> Empty world
+= make_single_circle_env    -> World with single circular obstacle
+"""
+from environments.empty import make_empty_env
 from environments.single_circle import make_single_circle_env
-ENV_FACTORY = make_single_circle_env   # callable that returns a BaseEnvironment
+ENV_FACTORY = make_single_circle_env          # callable that returns a BaseEnvironment
+
+
+
 
 # --- Controller ---
 from controllers.basic_tracker import basic_chase_controller
@@ -23,7 +32,13 @@ DRONE_RADIUS   = 0.5                   # collision radius (metres)
 EVADER_START   = (0.0, 5.0)           # initial (x, y) in metres
 EVADER_RADIUS  = 0.3                   # collision radius (metres)
 
+# Set to None for keyboard control (W/A/S/D), or assign a ScriptedTrajectory instance.
+# Example:
+from controllers.scripted_evader import ScriptedTrajectory
+EVADER_CONTROLLER = ScriptedTrajectory(obstacle_cx=5.0, obstacle_cy=5.0)
+# EVADER_CONTROLLER = None               # None → keyboard, object → scripted
+
 # --- Renderer ---
-RENDERER_WIDTH  = 800                  # window width (pixels)
-RENDERER_HEIGHT = 800                  # window height (pixels)
+RENDERER_WIDTH  = 1000                  # window width (pixels)
+RENDERER_HEIGHT = 800              # window height (pixels)
 RENDERER_SCALE  = 30.0                 # pixels per metre
