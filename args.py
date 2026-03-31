@@ -3,6 +3,8 @@
 # Edit this file to change the environment, controller, or any simulation settings.
 
 # --- Environment ---
+
+# testing branches in github
 """
 List of environments
 = make_empty_env            -> Empty world
@@ -39,4 +41,4 @@ EVADER_CONTROLLER = ScriptedTrajectory(obstacle_cx=5.0, obstacle_cy=5.0)
 # --- Renderer ---
 RENDERER_WIDTH  = 1000                  # window width (pixels)
 RENDERER_HEIGHT = 800              # window height (pixels)
-RENDERER_SCALE  = 30.0                 # pixels per metre
+RENDERER_SCALE  = 20.0                 # pixels per metre
