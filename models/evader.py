@@ -4,7 +4,7 @@ import numpy as np
 class Evader:
     def __init__(self, x=5.0, y=5.0):
         self.state = np.array([x, y], dtype=float)
-        self.speed = 3.0
+        self.speed = 10.0
 
     def _obstacle_repulsion(self, env):
         x, y = self.state
@@ -63,7 +63,7 @@ class Evader:
             next_x = x + vx_cmd * dt
             next_y = y + vy_cmd * dt
 
-            if env.check_collision(next_x, next_y, agent_radius=1.0):
+            if env.check_collision(next_x, next_y, agent_radius=0.2):
                 vx_cmd = 0.0
                 vy_cmd = 0.0
 
