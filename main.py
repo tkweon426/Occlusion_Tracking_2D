@@ -51,7 +51,7 @@ def main():
             drone_action = args.CONTROLLER(drone.state, evader.state, env)
 
             # 4. Step Physics
-            evader.step(vx, vy, dt)
+            evader.step(vx, vy, dt, env)
             drone.step(drone_action, dt)
 
             # 5. Collision Check
