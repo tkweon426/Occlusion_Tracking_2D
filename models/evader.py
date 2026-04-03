@@ -51,7 +51,7 @@ class Evader:
         next_x = x + vx_cmd * dt
         next_y = y + vy_cmd * dt
 
-        if env.check_collision(next_x, next_y, agent_radius=1.0):
+        if env.check_collision(next_x, next_y, agent_radius=0.2):
             rep_mag = np.hypot(rep_x, rep_y)
             if rep_mag > 1e-6:
                 vx_cmd = self.speed * rep_x / rep_mag
