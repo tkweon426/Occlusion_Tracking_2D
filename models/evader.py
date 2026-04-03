@@ -12,9 +12,9 @@ class Evader:
         rep_x = 0.0
         rep_y = 0.0
 
-        safety_buffer = 0.8     
-        repulse_gain = 12.0
-        emergency_gain = 25.0
+        safety_buffer = 0.3     
+        repulse_gain = 3.0
+        emergency_gain = 10.0
 
         for obs in env.obstacles:
             vx = x - obs.cx
@@ -42,9 +42,20 @@ class Evader:
         vx_cmd = vx + rep_x
         vy_cmd = vy + rep_y
 
+        # distance to nearest obstacle boundary
+        min_clearance = 1e9
+        for obs in env.obstacles:
+            clearance = np.hypot(x - obs.cx, y - obs.cy) - obs.radius
+            min_clearance = min(min_clearance, clearance)
+
+        # slow down near obstacle instead of stopping too early
+        speed_limit = self.speed
+        if min_clearance < 1.0:
+            speed_limit = max(0.3, self.speed * min_clearance / 1.0)
+
         v_mag = np.hypot(vx_cmd, vy_cmd)
-        if v_mag > self.speed:
-            scale = self.speed / v_mag
+        if v_mag > speed_limit:
+            scale = speed_limit / v_mag
             vx_cmd *= scale
             vy_cmd *= scale
 
@@ -52,20 +63,20 @@ class Evader:
         next_y = y + vy_cmd * dt
 
         if env.check_collision(next_x, next_y, agent_radius=0.2):
-            rep_mag = np.hypot(rep_x, rep_y)
-            if rep_mag > 1e-6:
-                vx_cmd = self.speed * rep_x / rep_mag
-                vy_cmd = self.speed * rep_y / rep_mag
-            else:
-                vx_cmd = 0.0
-                vy_cmd = 0.0
+            # move only a fraction instead of fully stopping
+            safe = False
+            for alpha in [0.5, 0.25, 0.1, 0.05]:
+                test_x = x + alpha * vx_cmd * dt
+                test_y = y + alpha * vy_cmd * dt
+                if not env.check_collision(test_x, test_y, agent_radius=0.2):
+                    next_x = test_x
+                    next_y = test_y
+                    safe = True
+                    break
 
-            next_x = x + vx_cmd * dt
-            next_y = y + vy_cmd * dt
+            if not safe:
+                next_x = x
+                next_y = y
 
-            if env.check_collision(next_x, next_y, agent_radius=0.2):
-                vx_cmd = 0.0
-                vy_cmd = 0.0
-
-        self.state[0] += vx_cmd * dt
-        self.state[1] += vy_cmd * dt
+        self.state[0] = next_x
+        self.state[1] = next_y
