@@ -12,9 +12,9 @@ class Evader:
         rep_x = 0.0
         rep_y = 0.0
 
-        safety_buffer = 3.0
-        repulse_gain = 45.0
-        emergency_gain = 80.0
+        safety_buffer = 0.8     
+        repulse_gain = 12.0
+        emergency_gain = 25.0
 
         for obs in env.obstacles:
             vx = x - obs.cx
