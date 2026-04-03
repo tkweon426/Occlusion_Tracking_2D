@@ -48,7 +48,7 @@ def main():
             if keys[pygame.K_d]: vx = evader.speed
 
             # 3. Control Logic for Drone
-            drone_action = args.CONTROLLER(drone.state, evader.state)
+            drone_action = args.CONTROLLER(drone.state, evader.state, env)
 
             # 4. Step Physics
             evader.step(vx, vy, dt)

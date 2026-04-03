@@ -7,9 +7,8 @@ from environments.single_circle import make_single_circle_env
 ENV_FACTORY = make_single_circle_env   # callable that returns a BaseEnvironment
 
 # --- Controller ---
-from controllers.basic_tracker import basic_chase_controller
-CONTROLLER = basic_chase_controller    # callable: (drone_state, evader_state) -> action
-
+from controllers.occlusion_aware_tracker import occlusion_aware_controller
+CONTROLLER = occlusion_aware_controller
 # --- Simulation ---
 DT = 0.01                              # timestep (seconds)
 
