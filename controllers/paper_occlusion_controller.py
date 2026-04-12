@@ -84,9 +84,24 @@ def paper_occlusion_controller(drone_state, evader_state, env, dt=0.01):
     y_plan = sol["y"]
 
     if len(x_plan) >= 2:
-        goal_xy = (x_plan[1], y_plan[1])
+        gx = x_plan[1]
+        gy = y_plan[1]
     else:
-        goal_xy = (x_plan[0], y_plan[0])
+        gx = x_plan[0]
+        gy = y_plan[0]
 
+    # prevent one bad optimizer step from sending the drone too far away
+    dxg = gx - x
+    dyg = gy - y
+    goal_dist = np.hypot(dxg, dyg)
+
+    max_step_goal = 1.0
+    if goal_dist > max_step_goal:
+        scale = max_step_goal / max(goal_dist, 1e-6)
+        gx = x + dxg * scale
+        gy = y + dyg * scale
+
+    goal_xy = (gx, gy)
     look_at_xy = (ex, ey)
+
     return _pd_track_point(drone_state, goal_xy, look_at_xy)

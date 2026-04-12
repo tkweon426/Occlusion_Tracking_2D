@@ -8,7 +8,7 @@ ENV_FN = make_mixed_obstacles_env  # callable that returns a BaseEnvironment
 
 # --- Controller ---
 from controllers.paper_occlusion_controller import paper_occlusion_controller
-CONTROLLER_FN = paper_occlusion_controller
+CONTROLLER = paper_occlusion_controller
 # --- Simulation ---
 DT = 0.01                              # timestep (seconds)
 

@@ -22,11 +22,11 @@ class Paper2DOcclusionSolver:
         desired_range=4.5,
         min_range=3.0,
         max_range=6.0,
-        w_smooth=25.0,
-        w_track=30.0,
-        w_occ=40.0,
+        w_smooth=12.0,
+        w_track=120.0,
+        w_occ=25.0,
         w_anchor=5000.0,
-        w_prox=2.0,
+        w_prox=0.0,
     ):
         self.N = int(horizon)
         self.dt = float(dt)
@@ -77,8 +77,8 @@ class Paper2DOcclusionSolver:
         x_des = tx + self.desired_range * ux
         y_des = ty + self.desired_range * uy
 
-        if self.prev_x is not None and self.prev_y is not None and len(self.prev_x) == self.N:
-            return self.prev_x.copy(), self.prev_y.copy()
+        #if self.prev_x is not None and self.prev_y is not None and len(self.prev_x) == self.N:
+            #return self.prev_x.copy(), self.prev_y.copy()
 
         alpha = np.linspace(0.0, 1.0, self.N)
         x = (1.0 - alpha) * x0 + alpha * x_des
@@ -146,6 +146,11 @@ class Paper2DOcclusionSolver:
         reg = 1e-6 * np.eye(self.N)
         sol = np.linalg.solve(H + reg, b)
         sol[0] = init_val
+        # keep trajectory inside a reasonable workspace
+        sol = np.clip(sol, -12.0, 12.0)
+        # keep first point exactly at current state
+        sol[0] = init_val
+        
         return sol
 
     def _trajectory_update(self, drone_xy, tx, ty, alpha_r, d_r, occ_data, x_prev, y_prev):
