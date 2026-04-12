@@ -16,7 +16,7 @@ def main():
     evader = Evader(x=args.EVADER_START[0], y=args.EVADER_START[1])
     renderer = PygameRenderer(width=args.RENDERER_WIDTH, height=args.RENDERER_HEIGHT,
                                scale=args.RENDERER_SCALE)
-    env = args.ENV_FACTORY()
+    env = args.ENV_FN()
 
     # Clock to manage simulation speed
     clock = pygame.time.Clock()
