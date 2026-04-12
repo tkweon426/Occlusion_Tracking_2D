@@ -3,12 +3,12 @@
 # Edit this file to change the environment, controller, or any simulation settings.
 
 # --- Environment ---
-from environments.single_circle import make_single_circle_env
-ENV_FACTORY = make_single_circle_env   # callable that returns a BaseEnvironment
+from environments.mixed_obstacles_env import make_mixed_obstacles_env
+ENV_FN = make_mixed_obstacles_env  # callable that returns a BaseEnvironment
 
 # --- Controller ---
-from controllers.occlusion_aware_tracker import occlusion_aware_controller
-CONTROLLER = occlusion_aware_controller
+from controllers.paper_occlusion_controller import paper_occlusion_controller
+CONTROLLER_FN = paper_occlusion_controller
 # --- Simulation ---
 DT = 0.01                              # timestep (seconds)
 
