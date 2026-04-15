@@ -24,8 +24,8 @@ class ScriptedTrajectory:
         obstacle_cx: float = 3.0,
         obstacle_cy: float = 7.0,
         orbit_radius: float = 3.0,   # distance from obstacle centre to orbit path
-        orbit_speed: float = 5.0,    # m/s while looping
-        travel_speed: float = 8.0,   # m/s on the straight-line leg
+        orbit_speed: float = 4.0,    # m/s while looping
+        travel_speed: float = 4.0,   # m/s on the straight-line leg
         stop_point: tuple = (-8.0, -4.0),
         orbit_points: int = 72,      # resolution of the circular arc (one per 5 deg)
     ):

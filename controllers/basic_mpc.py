@@ -31,7 +31,6 @@ class BasicMPC:
         safety_margin=0.6,
         w_range=5.0,
         w_effort=0.1,
-        w_vel=0.05,
         kp_yaw=4.0,
         kd_yaw=2.0,
         tau_z_max=1.0,
@@ -45,7 +44,6 @@ class BasicMPC:
         self.safety_margin = safety_margin
         self.w_range = w_range
         self.w_effort = w_effort
-        self.w_vel = w_vel
         self.kp_yaw = kp_yaw
         self.kd_yaw = kd_yaw
         self.tau_z_max = tau_z_max
@@ -129,10 +127,9 @@ class BasicMPC:
         ex, ey = evader_xy
         cost = 0.0
         for k in range(1, self.N + 1):
-            xk, yk, vxk, vyk = states[k]
+            xk, yk = states[k, 0], states[k, 1]
             dist = np.hypot(xk - ex, yk - ey)
             cost += self.w_range * (dist - self._d_mid) ** 2
-            cost += self.w_vel * (vxk ** 2 + vyk ** 2)
         cost += self.w_effort * np.dot(u_flat, u_flat)
         return cost
 
