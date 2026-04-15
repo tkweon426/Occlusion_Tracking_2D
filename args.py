@@ -32,7 +32,7 @@ EVADER_RADIUS  = 0.3                   # collision radius (metres)
 
 # Set to None for keyboard control (W/A/S/D), or assign a ScriptedTrajectory instance.
 # Example:
-from controllers.scripted_evader import ScriptedTrajectory
+from controllers.scripted_evader_1 import ScriptedTrajectory
 EVADER_CONTROLLER = ScriptedTrajectory(obstacle_cx=3.0, obstacle_cy=7.0)
 # EVADER_CONTROLLER = None               # None → keyboard, object → scripted
 
