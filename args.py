@@ -2,6 +2,9 @@
 # Central configuration for the simulation.
 # Edit this file to change the environment, controller, or any simulation settings.
 
+# --- Simulation ---
+DT = 0.01                              # timestep (seconds)
+
 # --- Environment ---
 """
 List of environments
@@ -10,15 +13,16 @@ List of environments
 """
 from environments.empty import make_empty_env
 from environments.single_circle import make_single_circle_env
-ENV_FACTORY = make_single_circle_env          # callable that returns a BaseEnvironment
 
+# Create a single shared environment instance.
+# To switch environments, change only this line — the controller picks up the
+# new obstacle list automatically because it holds a reference to _env.
+_env = make_single_circle_env()
+ENV_FACTORY = lambda: _env            # main.py calls this once; returns the same object
 
 # --- Controller ---
-from controllers.basic_tracker import basic_chase_controller
-CONTROLLER = basic_chase_controller    # callable: (drone_state, evader_state) -> action
-
-# --- Simulation ---
-DT = 0.01                              # timestep (seconds)
+from controllers.basic_mpc import BasicMPC
+CONTROLLER = BasicMPC(env=_env)  # dt defaults to 0.1 s (MPC prediction step, not sim step)
 
 # --- Drone ---
 DRONE_START    = (0.0, 0.0)           # initial (x, y) in metres
