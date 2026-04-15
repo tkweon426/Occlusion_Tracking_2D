@@ -1,5 +1,6 @@
 # main.py
 
+import argparse
 import pygame
 from models.planar_quadrotor import TopDownQuadrotor
 from models.evader import Evader
@@ -7,6 +8,13 @@ from visualization.renderer import PygameRenderer
 import args
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--record", nargs="?", const="results/recording.mp4", metavar="FILE",
+        help="Save the run as a video. Optionally specify a filename (default: results/recording.mp4).",
+    )
+    cli = parser.parse_args()
+
     dt = args.DT
 
     # Initialize components
@@ -27,6 +35,13 @@ def main():
     else:
         print("Simulation starting. Evader is following a scripted trajectory.")
     print("Close the window or press Q to quit.")
+
+    VIDEO_FPS = 60
+    frames = []
+    frame_timer = 0.0
+    recording = cli.record is not None
+    if recording:
+        print(f"Recording enabled — will save to: {cli.record}")
 
     running = True
     collided = False
@@ -71,11 +86,27 @@ def main():
         # 6. Render
         renderer.draw(drone.state, evader.state, env=env, collision_msg=collision_msg)
 
+        # 6b. Capture frame if recording (sample at VIDEO_FPS, not sim rate)
+        if recording:
+            frame_timer += dt
+            if frame_timer >= 1.0 / VIDEO_FPS:
+                frame_timer -= 1.0 / VIDEO_FPS
+                # surfarray gives (width, height, 3); imageio expects (height, width, 3)
+                frame = pygame.surfarray.array3d(renderer.screen).transpose(1, 0, 2)
+                frames.append(frame)
+
         # 7. Enforce timestep (runs the loop at roughly 1/dt frames per second)
         clock.tick(int(1 / dt))
 
     # Clean up and close window
     renderer.quit()
+
+    # Save video if requested
+    if recording and frames:
+        import imageio
+        print(f"Saving {len(frames)} frames at {VIDEO_FPS} fps...")
+        imageio.mimwrite(cli.record, frames, fps=VIDEO_FPS)
+        print(f"Video saved to: {cli.record}")
 
 if __name__ == "__main__":
     main()
