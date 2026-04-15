@@ -1,5 +1,5 @@
 # controllers/scripted_evader.py
-# Pre-planned trajectory for the evader: orbit obstacle → straight line → decelerate to stop.
+# Pre-planned trajectory for the evader: approach → clockwise orbit → straight line → decelerate to stop.
 
 import numpy as np
 
@@ -10,9 +10,9 @@ class ScriptedTrajectory:
 
     Phases
     ------
-    1. Approach - move from spawn toward the orbit entry point.
-    2. Orbit  -  one full counterclockwise loop around the obstacle.
-    3. Straight -  travel in a straight line away from the obstacle.
+    1. Approach   - move from spawn toward (0, 7), the orbit entry point.
+    2. Orbit      - one full clockwise loop around the obstacle at (3, 7).
+    3. Straight   - travel in a straight line away from the obstacle.
     4. Decelerate - slow to a stop at the destination.
     """
 
@@ -22,8 +22,8 @@ class ScriptedTrajectory:
     def __init__(
         self,
         obstacle_cx: float = 3.0,
-        obstacle_cy: float = 8.0,
-        orbit_radius: float = 3.2,   # clearance around the obstacle edge
+        obstacle_cy: float = 7.0,
+        orbit_radius: float = 3.0,   # distance from obstacle centre to orbit path
         orbit_speed: float = 5.0,    # m/s while looping
         travel_speed: float = 8.0,   # m/s on the straight-line leg
         stop_point: tuple = (-8.0, -4.0),
@@ -48,7 +48,8 @@ class ScriptedTrajectory:
         """Returns list of (x, y, speed) tuples describing the full path."""
         wps = []
 
-        # --- Phase 1: approach to orbit entry (leftmost point of orbit) ---
+        # --- Phase 1: approach to orbit entry at (0, 7) ---
+        # (0, 7) is the leftmost point of the orbit: cx=3, r=3, angle=π
         entry_angle = np.pi          # angle = 180° → point to the left of the obstacle
         entry = (
             self._cx + self._r * np.cos(entry_angle),
@@ -56,10 +57,10 @@ class ScriptedTrajectory:
         )
         wps.append((*entry, self._orbit_speed))
 
-        # --- Phase 2: full counterclockwise loop ---
-        # θ goes from π up to π + 2π (counterclockwise in standard math coords)
+        # --- Phase 2: full clockwise loop ---
+        # θ goes from π down to π - 2π (clockwise in standard math coords)
         for i in range(1, self._n + 1):
-            theta = entry_angle + 2 * np.pi * i / self._n
+            theta = entry_angle - 2 * np.pi * i / self._n
             wx = self._cx + self._r * np.cos(theta)
             wy = self._cy + self._r * np.sin(theta)
             wps.append((wx, wy, self._orbit_speed))

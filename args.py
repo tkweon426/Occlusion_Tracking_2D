@@ -27,13 +27,13 @@ DRONE_I_ZZ     = 0.02                  # kg·m²
 DRONE_RADIUS   = 0.5                   # collision radius (metres)
 
 # --- Evader ---
-EVADER_START   = (0.0, 5.0)           # initial (x, y) in metres
+EVADER_START   = (0.0, 3.0)           # initial (x, y) in metres
 EVADER_RADIUS  = 0.3                   # collision radius (metres)
 
 # Set to None for keyboard control (W/A/S/D), or assign a ScriptedTrajectory instance.
 # Example:
 from controllers.scripted_evader import ScriptedTrajectory
-EVADER_CONTROLLER = ScriptedTrajectory(obstacle_cx=5.0, obstacle_cy=5.0)
+EVADER_CONTROLLER = ScriptedTrajectory(obstacle_cx=3.0, obstacle_cy=7.0)
 # EVADER_CONTROLLER = None               # None → keyboard, object → scripted
 
 # --- Renderer ---
