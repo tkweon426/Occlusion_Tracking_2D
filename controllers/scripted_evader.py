@@ -21,9 +21,9 @@ class ScriptedTrajectory:
 
     def __init__(
         self,
-        obstacle_cx: float = 5.0,
-        obstacle_cy: float = 5.0,
-        orbit_radius: float = 4.2,   # clearance around the obstacle edge
+        obstacle_cx: float = 3.0,
+        obstacle_cy: float = 8.0,
+        orbit_radius: float = 3.2,   # clearance around the obstacle edge
         orbit_speed: float = 5.0,    # m/s while looping
         travel_speed: float = 8.0,   # m/s on the straight-line leg
         stop_point: tuple = (-8.0, -4.0),
