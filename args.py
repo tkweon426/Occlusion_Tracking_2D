@@ -15,27 +15,27 @@ List of environments
 from environments.empty import make_empty_env
 from environments.single_circle import make_single_circle_env
 from environments.single_ellipse import make_single_ellipse_env
-from environments.single_ellipse import make_two_ellipse_env
+from environments.single_ellipse import make_two_obs_env
 
 # Create a single shared environment instance.
 # To switch environments, change only this line — the controller picks up the
 # new obstacle list automatically because it holds a reference to _env.
 #_env = make_single_circle_env()
 #_env = make_single_ellipse_env()
-_env = make_two_ellipse_env()
+_env = make_two_obs_env()
 ENV_FACTORY = lambda: _env            # main.py calls this once; returns the same object
 
 # --- Controller ---
 from controllers.basic_mpc import BasicMPC
 from controllers.basic_tracker import basic_chase_controller
 from controllers.masnavi_mpc import MasnaviMPC
-CONTROLLER = BasicMPC(env=_env, sim_dt=DT)
+#CONTROLLER = BasicMPC(env=_env, sim_dt=DT)
 #CONTROLLER = basic_chase_controller
-#CONTROLLER = MasnaviMPC(env=_env, sim_dt=DT)
+CONTROLLER = MasnaviMPC(env=_env, sim_dt=DT)
 
 
 # --- Drone ---
-DRONE_START    = (0.0, 0.0)           # initial (x, y) in metres
+DRONE_START    = (0.0, -3.5)          # initial (x, y) in metres
 DRONE_MASS     = 1.0                   # kg
 DRONE_I_ZZ     = 0.02                  # kg·m²
 DRONE_RADIUS   = 0.5                   # collision radius (metres)
@@ -53,4 +53,4 @@ EVADER_CONTROLLER = None               # None → keyboard, object → scripted
 # --- Renderer ---
 RENDERER_WIDTH  = 1000                  # window width (pixels)
 RENDERER_HEIGHT = 800              # window height (pixels)
-RENDERER_SCALE  = 30.0                 # pixels per metre
+RENDERER_SCALE  = 20.0                 # pixels per metre

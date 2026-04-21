@@ -31,10 +31,10 @@ class MasnaviMPC:
         num=50,
         num_samples=15,          # INCREASED: Dense raycast to prevent obstacle clipping
         nvar=11,
-        d_fov_min=2.0,
-        d_fov_max=4.0,
+        d_fov_min=5.0,
+        d_fov_max=10.0,
         v_max=8.0,
-        a_max=8.0,
+        a_max=6.87,
         weight_smoothness=0.05,  
         rho_fov=500.0,           
         rho_occ=1000.0,          
