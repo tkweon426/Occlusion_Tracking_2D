@@ -1,6 +1,7 @@
 # controllers/basic_mpc.py
 import numpy as np
 from scipy.optimize import minimize
+from predictors.constvel_predictor import ConstVelPredictor
 
 
 class BasicMPC:
@@ -13,8 +14,12 @@ class BasicMPC:
     with a PD loop.
 
     Hard constraints:
-      - d_min <= dist(drone, evader) <= d_max  at every horizon step
+      - dist(drone_k, evader_k) >= d_min  at every horizon step (lower bound)
+      - dist(drone_N, evader_N) <= d_max  at terminal step only (upper bound)
       - dist(drone_k, obs) >= obs.radius + safety_margin  per obstacle per step
+
+    Evader positions are predicted via ConstVelPredictor (constant-velocity
+    assumption with EMA-smoothed finite-difference velocity estimate).
 
     The environment is passed at construction time, so swapping to a different
     environment in args.py automatically updates the obstacle list seen here.
@@ -25,11 +30,11 @@ class BasicMPC:
         env,
         dt=0.1,
         N=15,
+        sim_dt=0.01,
         d_min=2.0,
         d_max=4.0,
         a_max=8.0,
         safety_margin=0.6,
-        w_range=5.0,
         w_effort=0.1,
         kp_yaw=4.0,
         kd_yaw=2.0,
@@ -38,17 +43,16 @@ class BasicMPC:
         self.env = env
         self.dt = dt
         self.N = N
+        self._predictor = ConstVelPredictor(sim_dt=sim_dt)
         self.d_min = d_min
         self.d_max = d_max
         self.a_max = a_max
         self.safety_margin = safety_margin
-        self.w_range = w_range
         self.w_effort = w_effort
         self.kp_yaw = kp_yaw
         self.kd_yaw = kd_yaw
         self.tau_z_max = tau_z_max
 
-        self._d_mid = (d_min + d_max) / 2.0
         self._n_vars = 2 * N
         self._u_prev = np.zeros(self._n_vars)
         self._bounds = [(-a_max, a_max)] * self._n_vars
@@ -77,16 +81,19 @@ class BasicMPC:
         drone_xy_vel = np.array([x, y, vx, vy])
         evader_xy = np.asarray(evader_state[:2], dtype=float)
 
-        u_opt, success = self._solve_mpc(drone_xy_vel, evader_xy)
+        # Predict evader trajectory over the MPC horizon
+        evader_traj = self._predictor.predict(evader_xy, self.dt, self.N)
+
+        u_opt, success = self._solve_mpc(drone_xy_vel, evader_traj)
 
         if success and np.isfinite(u_opt).all():
             ax_des, ay_des = u_opt[0], u_opt[1]
             self._shift_warm_start(u_opt)
         else:
-            ax_des, ay_des = self._fallback(drone_xy_vel, evader_xy, u_opt)
+            ax_des, ay_des = self._fallback(drone_xy_vel, evader_traj[0], u_opt)
 
         theta, phi = self._virtual_to_angles(ax_des, ay_des, psi)
-        tau_z = self._yaw_control(drone_state, evader_xy)
+        tau_z = self._yaw_control(drone_state, evader_traj[0])
 
         return np.array([theta, phi, tau_z])
 
@@ -122,18 +129,10 @@ class BasicMPC:
             self._last_u_hash = key
         return self._last_states
 
-    def _cost(self, u_flat, drone_xy_vel, evader_xy):
-        states = self._get_states(u_flat, drone_xy_vel)
-        ex, ey = evader_xy
-        cost = 0.0
-        for k in range(1, self.N + 1):
-            xk, yk = states[k, 0], states[k, 1]
-            dist = np.hypot(xk - ex, yk - ey)
-            cost += self.w_range * (dist - self._d_mid) ** 2
-        cost += self.w_effort * np.dot(u_flat, u_flat)
-        return cost
+    def _cost(self, u_flat):
+        return self.w_effort * np.dot(u_flat, u_flat)
 
-    def _all_constraints(self, u_flat, drone_xy_vel, evader_xy):
+    def _all_constraints(self, u_flat, drone_xy_vel, evader_traj):
         """
         Single vector-valued constraint function — all constraints in one call.
 
@@ -141,43 +140,64 @@ class BasicMPC:
         Using one vector function instead of many scalar functions means scipy
         only needs n+1 rollouts per gradient step (vs m*(n+1) for m scalars).
 
-        Layout per horizon step k=1..N:
-          [dist_k - d_min,  d_max - dist_k,  obs_clearance_k_0, ...]
+        evader_traj : (N+1, 2) predicted evader positions from ConstVelPredictor.
+                      evader_traj[k] is matched against drone state at step k.
+
+        Per-step (k=1..N):
+          - Lower bound:  dist_k - d_min >= 0  (don't crowd the evader)
+          - Obstacle clearance per obstacle
+        Terminal step only (k=N):
+          - Upper bound:  d_max - dist_N >= 0  (must be in range by end of horizon)
+
+        Applying the upper bound only at the terminal step keeps the problem
+        feasible when the evader has moved outside the current range — the
+        optimizer has the full horizon to close the gap.
         """
         states = self._get_states(u_flat, drone_xy_vel)
-        ex, ey = evader_xy
         n_obs = len(self.env.obstacles)
-        cons = np.empty(self.N * (2 + n_obs))
+        # per-step: 1 lower-bound + n_obs obstacle constraints; plus 1 terminal upper-bound
+        cons = np.empty(self.N * (1 + n_obs) + 1)
         idx = 0
         for k in range(1, self.N + 1):
             xk, yk = states[k, 0], states[k, 1]
+            ex, ey = evader_traj[k]
             dist = np.hypot(xk - ex, yk - ey)
-            cons[idx]     = dist - self.d_min
-            cons[idx + 1] = self.d_max - dist
-            idx += 2
+            cons[idx] = dist - self.d_min          # lower bound at every step
+            idx += 1
             for obs in self.env.obstacles:
-                cons[idx] = np.hypot(xk - obs.cx, yk - obs.cy) - (obs.radius + self.safety_margin)
+                if hasattr(obs, 'rx'):
+                    ct, st = np.cos(obs.theta), np.sin(obs.theta)
+                    dx = xk - obs.cx
+                    dy = yk - obs.cy
+                    lx = ( ct * dx + st * dy) / (obs.rx + self.safety_margin)
+                    ly = (-st * dx + ct * dy) / (obs.ry + self.safety_margin)
+                    cons[idx] = np.hypot(lx, ly) - 1.0
+                else:
+                    cons[idx] = np.hypot(xk - obs.cx, yk - obs.cy) - (obs.radius + self.safety_margin)
                 idx += 1
+        # upper bound at terminal step only
+        xN, yN = states[self.N, 0], states[self.N, 1]
+        eNx, eNy = evader_traj[self.N]
+        cons[idx] = self.d_max - np.hypot(xN - eNx, yN - eNy)
         return cons
 
-    def _solve_mpc(self, drone_xy_vel, evader_xy):
+    def _solve_mpc(self, drone_xy_vel, evader_traj):
         """Run SLSQP and return (u_opt, success)."""
         self._last_u_hash = None  # invalidate rollout cache for this timestep
 
         constraint = {
             'type': 'ineq',
             'fun': self._all_constraints,
-            'args': (drone_xy_vel, evader_xy),
+            'args': (drone_xy_vel, evader_traj),
         }
 
         result = minimize(
             fun=self._cost,
             x0=self._u_prev,
-            args=(drone_xy_vel, evader_xy),
             method='SLSQP',
             bounds=self._bounds,
             constraints=constraint,
-            options={'maxiter': 200, 'ftol': 1e-4},
+            options={'maxiter': 100, 'ftol': 1e-4},
         )
         return result.x, result.success
 
@@ -214,7 +234,7 @@ class BasicMPC:
         dx, dy = ex - x, ey - y
         dist = np.hypot(dx, dy)
         if dist > 1e-6:
-            scale = (dist - self._d_mid) / dist
+            scale = (dist - (self.d_min + self.d_max) / 2.0) / dist
             kp_fb = 3.0
             ax = np.clip(kp_fb * scale * dx, -self.a_max, self.a_max)
             ay = np.clip(kp_fb * scale * dy, -self.a_max, self.a_max)

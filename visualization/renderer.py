@@ -48,10 +48,27 @@ class PygameRenderer:
     def _draw_obstacles(self, env):
         """Draws all obstacles in the environment."""
         for obs in env.obstacles:
-            cx, cy = self._world_to_screen(obs.cx, obs.cy)
-            radius_px = int(obs.radius * self.scale)
-            pygame.draw.circle(self.screen, (80, 80, 80), (cx, cy), radius_px)
-            pygame.draw.circle(self.screen, (40, 40, 40), (cx, cy), radius_px, 2)
+            if hasattr(obs, 'rx'):
+                self._draw_ellipse_obstacle(obs)
+            else:
+                cx, cy = self._world_to_screen(obs.cx, obs.cy)
+                radius_px = int(obs.radius * self.scale)
+                pygame.draw.circle(self.screen, (80, 80, 80), (cx, cy), radius_px)
+                pygame.draw.circle(self.screen, (40, 40, 40), (cx, cy), radius_px, 2)
+
+    def _draw_ellipse_obstacle(self, obs):
+        ct, st = math.cos(obs.theta), math.sin(obs.theta)
+        n_pts = 48
+        pts = []
+        for i in range(n_pts):
+            a = 2 * math.pi * i / n_pts
+            lx = obs.rx * math.cos(a)
+            ly = obs.ry * math.sin(a)
+            wx = obs.cx + ct * lx - st * ly
+            wy = obs.cy + st * lx + ct * ly
+            pts.append(self._world_to_screen(wx, wy))
+        pygame.draw.polygon(self.screen, (80, 80, 80), pts)
+        pygame.draw.polygon(self.screen, (40, 40, 40), pts, 2)
 
     def _draw_los(self, drone_world, evader_world, env):
         """Draws a dotted line from drone to evader, green if clear, red if occluded."""
