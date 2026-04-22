@@ -29,7 +29,9 @@ ENV_FACTORY = lambda: _env            # main.py calls this once; returns the sam
 from controllers.basic_mpc import BasicMPC
 from controllers.basic_tracker import basic_chase_controller
 from controllers.masnavi_mpc import MasnaviMPC
+from controllers.occlusion_mpc import OcclusionMPC
 #CONTROLLER = BasicMPC(env=_env, sim_dt=DT)
+#CONTROLLER = OcclusionMPC(env=_env, sim_dt=DT)
 #CONTROLLER = basic_chase_controller
 CONTROLLER = MasnaviMPC(env=_env, sim_dt=DT)
 
@@ -47,8 +49,10 @@ EVADER_RADIUS  = 0.3                   # collision radius (metres)
 # Set to None for keyboard control (W/A/S/D), or assign a ScriptedTrajectory instance.
 # Example:
 from controllers.scripted_evader_1 import ScriptedTrajectory
+from controllers.scripted_evader_2 import ScriptedTrajectory_2
 #EVADER_CONTROLLER = ScriptedTrajectory(obstacle_cx=3.0, obstacle_cy=7.0)
-EVADER_CONTROLLER = None               # None → keyboard, object → scripted
+EVADER_CONTROLLER = ScriptedTrajectory_2(obstacle_cx=3.0, obstacle_cy=7.0)
+#EVADER_CONTROLLER = None               # None → keyboard, object → scripted
 
 # --- Renderer ---
 RENDERER_WIDTH  = 1000                  # window width (pixels)
