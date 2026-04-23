@@ -83,6 +83,7 @@ class BasicMPC:
 
         # Predict evader trajectory over the MPC horizon
         evader_traj = self._predictor.predict(evader_xy, self.dt, self.N)
+        self.last_evader_traj = evader_traj
 
         u_opt, success = self._solve_mpc(drone_xy_vel, evader_traj)
 

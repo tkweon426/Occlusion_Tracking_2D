@@ -118,6 +118,9 @@ def main():
 
             # Log this timestep
             if logging_enabled:
+                pred_traj = getattr(args.CONTROLLER, "last_evader_traj", None)
+                pred_next     = pred_traj[1]  if (pred_traj is not None and len(pred_traj) > 1) else (None, None)
+                pred_horizon  = pred_traj[-1] if (pred_traj is not None and len(pred_traj) > 1) else (None, None)
                 log_rows.append({
                     "timestep":        step,
                     "sim_time_s":      round(step * dt, 6),
@@ -142,6 +145,10 @@ def main():
                         drone.state[0], drone.state[1],
                         evader.state[0], evader.state[1],
                     ),
+                    "pred_evader_x":        pred_next[0]    if pred_next[0]    is not None else "",
+                    "pred_evader_y":        pred_next[1]    if pred_next[1]    is not None else "",
+                    "pred_horizon_evader_x": pred_horizon[0] if pred_horizon[0] is not None else "",
+                    "pred_horizon_evader_y": pred_horizon[1] if pred_horizon[1] is not None else "",
                 })
 
         # 6. Render

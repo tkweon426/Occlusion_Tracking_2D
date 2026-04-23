@@ -13,6 +13,8 @@ Features aligned with the paper:
   - Standard Split-Bregman multiplier updates (Eq 29).
   - Joint QP over [c_x (11), c_y (11)] = 22 variables.
   - Unfiltered occlusion projection (Eq 15).
+
+Optimized for real-time performance via strict vectorization and pre-allocation.
 """
 
 import numpy as np
@@ -20,25 +22,27 @@ from scipy.linalg import block_diag
 from scipy.special import comb
 
 from predictors.constvel_predictor import ConstVelPredictor
-
+from predictors.kalman_predictor import KalmanPredictor
 
 class MasnaviMPC:
     def __init__(
         self,
         env,
         sim_dt=0.01,
-        t_fin=1.5,
-        num=50,
-        num_samples=15,          # INCREASED: Dense raycast to prevent obstacle clipping
+        t_fin=2.0,      # prediction horizon time 
+        num=20,        # discretization of the horizon (number of samples)
+        num_samples=20,
         nvar=11,
         d_fov_min=5.0,
         d_fov_max=10.0,
         v_max=8.0,
         a_max=6.87,
-        weight_smoothness=0.05,  
-        rho_fov=500.0,           
-        rho_occ=1000.0,          
-        admm_iters=5,
+        weight_smoothness=20.0,
+        rho_fov=10.0,
+        rho_occ=100.0,
+        rho_ineq=10.0,
+        rho_scale=1.5,
+        admm_iters=15,
         res_tol=0.05,
         occ_margin=0.1,
         obs_a_scale=1.8,
@@ -59,6 +63,8 @@ class MasnaviMPC:
         self.weight_smoothness = weight_smoothness
         self.rho_fov = rho_fov
         self.rho_occ = rho_occ
+        self.rho_ineq = rho_ineq
+        self.rho_scale = rho_scale
         self.admm_iters = admm_iters
         self.res_tol = res_tol
         self.occ_margin = occ_margin
@@ -68,21 +74,47 @@ class MasnaviMPC:
         self.tau_z_max = tau_z_max
 
         self._g = 9.81
+        #self._predictor = KalmanPredictor(sim_dt=sim_dt)
         self._predictor = ConstVelPredictor(sim_dt=sim_dt)
         self._fallback_count = 0
 
         self._c_x_prev = np.zeros(nvar)
         self._c_y_prev = np.zeros(nvar)
 
+        # Precompute Basis Matrices
         self._P, self._P_dot, self._P_ddot = self._build_bernstein_basis()
 
         self._H_smooth = weight_smoothness * (self._P_ddot.T @ self._P_ddot)
         self._PtP = self._P.T @ self._P
+        self._PdotTPdot = self._P_dot.T @ self._P_dot
+        self._PddotTPddot = self._P_ddot.T @ self._P_ddot
 
         self._A_eq = np.vstack([
             self._P[0, :],        
             self._P_dot[0, :],    
         ])
+
+        # --- Performance Optimizations: Pre-allocation & Vectorization Vectors ---
+        
+        # Precompute sampling vectors
+        self._u_vals = np.linspace(0.0, 1.0, self.num_samples)
+        self._one_minus_u = 1.0 - self._u_vals
+        self._sum_1_minus_u_sq = np.sum(self._one_minus_u**2)
+        
+        # Reshape for broadcasting rules (num_samples x 1)
+        self._u_col = self._u_vals[:, None]
+        self._one_minus_u_col = self._one_minus_u[:, None]
+
+        # Pre-allocate static components of the KKT System Matrix
+        nv = self.nvar
+        A_eq_joint = block_diag(self._A_eq, self._A_eq)               
+        num_eq = A_eq_joint.shape[0]
+        
+        self._KKT = np.zeros((2 * nv + num_eq, 2 * nv + num_eq))
+        self._KKT[2*nv:, :2*nv] = A_eq_joint
+        self._KKT[:2*nv, 2*nv:] = A_eq_joint.T
+        # Top-left 22x22 (H_joint) is dynamically updated in _solve_kkt
+
 
     def __call__(self, drone_state, evader_state):
         x, y, psi, vx, vy, psi_dot = drone_state
@@ -90,6 +122,7 @@ class MasnaviMPC:
 
         horizon_dt = self.t_fin / (self.num - 1)
         evader_traj = self._predictor.predict(evader_xy, horizon_dt, self.num - 1)
+        self.last_evader_traj = evader_traj
 
         c_x, c_y, success = self._solve(drone_state, evader_traj)
 
@@ -110,7 +143,7 @@ class MasnaviMPC:
         return np.array([theta, phi, tau_z])
 
     def _build_bernstein_basis(self):
-        n = self.nvar - 1
+        n = self.nvar - 1           # 
         num = self.num
         t = np.linspace(0.0, 1.0, num)
 
@@ -157,7 +190,15 @@ class MasnaviMPC:
         c_x = self._c_x_prev.copy()
         c_y = self._c_y_prev.copy()
 
+        rho_fov  = self.rho_fov
+        rho_occ  = self.rho_occ
+        rho_ineq = self.rho_ineq
+
         n_obs = len(self.env.obstacles)
+
+        # Pre-allocate broadcasting arrays
+        evader_x_exp = evader_traj[:, 0][None, :]
+        evader_y_exp = evader_traj[:, 1][None, :]
 
         for _ in range(self.admm_iters):
             x_drone = self._P @ c_x
@@ -173,84 +214,104 @@ class MasnaviMPC:
             alpha_o = np.zeros((n_obs, self.num_samples, self.num))
             d_o = np.zeros((n_obs, self.num_samples, self.num))
 
+            # Expand drone trajectory for broadcasting
+            x_drone_exp = x_drone[None, :]
+            y_drone_exp = y_drone[None, :]
+
+            # Vectorized sample dimension (shape: num_samples x num)
+            x_tilde = self._one_minus_u_col * x_drone_exp + self._u_col * evader_x_exp
+            y_tilde = self._one_minus_u_col * y_drone_exp + self._u_col * evader_y_exp
+
             for oi, obs in enumerate(self.env.obstacles):
                 rx_ell, ry_ell, th_ell = self._obs_axes(obs)
                 ct, st = np.cos(th_ell), np.sin(th_ell)
-                for si in range(self.num_samples):
-                    u = si / max(self.num_samples - 1, 1)
+                
+                dx_o = x_tilde - obs.cx
+                dy_o = y_tilde - obs.cy
 
-                    x_tilde = (1.0 - u) * x_drone + u * evader_traj[:, 0]
-                    y_tilde = (1.0 - u) * y_drone + u * evader_traj[:, 1]
+                # Transform to local normalized frame
+                lx = ( ct * dx_o + st * dy_o) / rx_ell
+                ly = (-st * dx_o + ct * dy_o) / ry_ell
 
-                    dx_o = x_tilde - obs.cx
-                    dy_o = y_tilde - obs.cy
+                dist_n = np.hypot(lx, ly)
 
-                    # Transform to local normalized frame
-                    lx = ( ct * dx_o + st * dy_o) / rx_ell
-                    ly = (-st * dx_o + ct * dy_o) / ry_ell
+                # Fallback to evader direction when near-zero
+                evader_lx = ( ct * (evader_traj[:, 0] - obs.cx) + st * (evader_traj[:, 1] - obs.cy)) / rx_ell
+                evader_ly = (-st * (evader_traj[:, 0] - obs.cx) + ct * (evader_traj[:, 1] - obs.cy)) / ry_ell
+                a_n_evader = np.arctan2(evader_ly, evader_lx) # Shape: (num,)
+                
+                # Apply fallback across all samples using NumPy broadcasting
+                a_n = np.where(dist_n > 1e-6, np.arctan2(ly, lx), a_n_evader[None, :])
 
-                    dist_n = np.hypot(lx, ly)
+                alpha_o[oi, :, :] = a_n
+                d_o[oi, :, :] = np.maximum(1.0 + self.occ_margin, dist_n)
 
-                    # Angle in normalized space; fallback to evader direction when near-zero
-                    evader_lx = ( ct * (evader_traj[:, 0] - obs.cx) + st * (evader_traj[:, 1] - obs.cy)) / rx_ell
-                    evader_ly = (-st * (evader_traj[:, 0] - obs.cx) + ct * (evader_traj[:, 1] - obs.cy)) / ry_ell
-                    a_n = np.where(dist_n > 1e-6, np.arctan2(ly, lx), np.arctan2(evader_ly, evader_lx))
+            # STEP 2a: Update acceleration slack variables (xi_4)
+            s_ax = np.clip(self._P_ddot @ c_x, -self.a_max, self.a_max)
+            s_ay = np.clip(self._P_ddot @ c_y, -self.a_max, self.a_max)
 
-                    alpha_o[oi, si, :] = a_n
-                    d_o[oi, si, :] = np.maximum(1.0 + self.occ_margin, dist_n)
-
-            # STEP 2: Solve Exact KKT for xi_1 (c_x, c_y)
+            # STEP 2b: Solve Exact KKT for xi_1 (c_x, c_y)
             H_joint, g_joint = self._build_qp(
-                evader_traj, alpha_r, d_r, alpha_o, d_o, lambda_x, lambda_y
+                evader_traj, alpha_r, d_r, alpha_o, d_o,
+                lambda_x, lambda_y,
+                rho_fov, rho_occ, rho_ineq,
+                s_ax, s_ay, evader_x_exp, evader_y_exp
             )
             c_x_new, c_y_new, ok = self._solve_kkt(H_joint, g_joint, b_eq_x, b_eq_y)
+            
             if not ok:
                 return self._c_x_prev.copy(), self._c_y_prev.copy(), False
-            
+
             c_x, c_y = c_x_new, c_y_new
 
             # STEP 3: Bregman Multiplier Updates
             res_tar_x = self._P @ c_x - (evader_traj[:, 0] + d_r * np.cos(alpha_r))
             res_tar_y = self._P @ c_y - (evader_traj[:, 1] + d_r * np.sin(alpha_r))
 
-            grad_lambda_x = self.rho_fov * self._P.T @ res_tar_x
-            grad_lambda_y = self.rho_fov * self._P.T @ res_tar_y
+            grad_lambda_x = rho_fov * self._P.T @ res_tar_x
+            grad_lambda_y = rho_fov * self._P.T @ res_tar_y
 
             occ_viol_max = 0.0
+
+            # Re-expand updated drone state for residual checks
+            x_drone_exp = (self._P @ c_x)[None, :]
+            y_drone_exp = (self._P @ c_y)[None, :]
+            x_tilde = self._one_minus_u_col * x_drone_exp + self._u_col * evader_x_exp
+            y_tilde = self._one_minus_u_col * y_drone_exp + self._u_col * evader_y_exp
+            
+            x_drone_scaled = self._one_minus_u_col * x_drone_exp
+            y_drone_scaled = self._one_minus_u_col * y_drone_exp
 
             for oi, obs in enumerate(self.env.obstacles):
                 rx_ell, ry_ell, th_ell = self._obs_axes(obs)
                 ct, st = np.cos(th_ell), np.sin(th_ell)
-                for si in range(self.num_samples):
-                    u = si / max(self.num_samples - 1, 1)
+                
+                cos_a = np.cos(alpha_o[oi])
+                sin_a = np.sin(alpha_o[oi])
+                d = d_o[oi]
 
-                    # REMOVED the active-set filter to prevent breaking the KKT continuity
-                    A_occ = (1.0 - u) * self._P
+                ux = ct * rx_ell * cos_a - st * ry_ell * sin_a
+                uy = st * rx_ell * cos_a + ct * ry_ell * sin_a
 
-                    cos_a = np.cos(alpha_o[oi, si, :])
-                    sin_a = np.sin(alpha_o[oi, si, :])
-                    d = d_o[oi, si, :]
+                b_occ_x = obs.cx - self._u_col * evader_x_exp + ux * d
+                b_occ_y = obs.cy - self._u_col * evader_y_exp + uy * d
 
-                    # Map normalized-frame angle back to global displacement
-                    ux = ct * rx_ell * cos_a - st * ry_ell * sin_a
-                    uy = st * rx_ell * cos_a + ct * ry_ell * sin_a
+                res_occ_x = x_drone_scaled - b_occ_x
+                res_occ_y = y_drone_scaled - b_occ_y
 
-                    b_occ_x = obs.cx - u * evader_traj[:, 0] + ux * d
-                    b_occ_y = obs.cy - u * evader_traj[:, 1] + uy * d
+                # Weighting residuals by (1 - u) and summing over samples 
+                weighted_res_occ_x = self._one_minus_u_col * res_occ_x
+                weighted_res_occ_y = self._one_minus_u_col * res_occ_y
+                
+                grad_lambda_x += rho_occ * (self._P.T @ np.sum(weighted_res_occ_x, axis=0))
+                grad_lambda_y += rho_occ * (self._P.T @ np.sum(weighted_res_occ_y, axis=0))
 
-                    res_occ_x = A_occ @ c_x - b_occ_x
-                    res_occ_y = A_occ @ c_y - b_occ_y
-
-                    grad_lambda_x += self.rho_occ * A_occ.T @ res_occ_x
-                    grad_lambda_y += self.rho_occ * A_occ.T @ res_occ_y
-
-                    xs = (1.0 - u) * (self._P @ c_x) + u * evader_traj[:, 0]
-                    ys = (1.0 - u) * (self._P @ c_y) + u * evader_traj[:, 1]
-                    xs_l =  ct * (xs - obs.cx) + st * (ys - obs.cy)
-                    ys_l = -st * (xs - obs.cx) + ct * (ys - obs.cy)
-                    ell_val = np.sqrt((xs_l / rx_ell) ** 2 + (ys_l / ry_ell) ** 2)
-                    viol = float(np.max(np.maximum(0.0, (1.0 + self.occ_margin) - ell_val)))
-                    occ_viol_max = max(occ_viol_max, viol)
+                # Violation calculation
+                xs_l =  ct * (x_tilde - obs.cx) + st * (y_tilde - obs.cy)
+                ys_l = -st * (x_tilde - obs.cx) + ct * (y_tilde - obs.cy)
+                ell_val = np.sqrt((xs_l / rx_ell) ** 2 + (ys_l / ry_ell) ** 2)
+                viol = float(np.max(np.maximum(0.0, (1.0 + self.occ_margin) - ell_val)))
+                occ_viol_max = max(occ_viol_max, viol)
 
             lambda_x -= grad_lambda_x
             lambda_y -= grad_lambda_y
@@ -258,10 +319,19 @@ class MasnaviMPC:
             fov_res = float(np.max(np.hypot(res_tar_x, res_tar_y)))
             if fov_res < self.res_tol and occ_viol_max < self.res_tol:
                 break
+                
+            rho_fov  *= self.rho_scale
+            rho_occ  *= self.rho_scale
+            rho_ineq *= self.rho_scale
 
         return c_x, c_y, True
 
-    def _build_qp(self, evader_traj, alpha_r, d_r, alpha_o, d_o, lambda_x, lambda_y):
+    def _build_qp(
+        self, evader_traj, alpha_r, d_r, alpha_o, d_o,
+        lambda_x, lambda_y,
+        rho_fov, rho_occ, rho_ineq,
+        s_ax, s_ay, evader_x_exp, evader_y_exp
+    ):
         nv = self.nvar
         H_joint = np.zeros((2 * nv, 2 * nv))
         g_joint = np.zeros(2 * nv)
@@ -272,39 +342,51 @@ class MasnaviMPC:
         g_joint[:nv] = -lambda_x
         g_joint[nv:] = -lambda_y
 
+        # FOV tracking term
         b_tar_x = evader_traj[:, 0] + d_r * np.cos(alpha_r)
         b_tar_y = evader_traj[:, 1] + d_r * np.sin(alpha_r)
 
-        H_joint[:nv, :nv] += self.rho_fov * self._PtP
-        H_joint[nv:, nv:] += self.rho_fov * self._PtP
+        H_joint[:nv, :nv] += rho_fov * self._PtP
+        H_joint[nv:, nv:] += rho_fov * self._PtP
 
-        g_joint[:nv] -= self.rho_fov * self._P.T @ b_tar_x
-        g_joint[nv:] -= self.rho_fov * self._P.T @ b_tar_y
+        g_joint[:nv] -= rho_fov * self._P.T @ b_tar_x
+        g_joint[nv:] -= rho_fov * self._P.T @ b_tar_y
+
+        # Acceleration bound term
+        H_ineq_acc  = rho_ineq * self._PddotTPddot
+
+        H_joint[:nv, :nv] += H_ineq_acc
+        H_joint[nv:, nv:] += H_ineq_acc
+
+        g_joint[:nv] -= rho_ineq * self._P_ddot.T @ s_ax
+        g_joint[nv:] -= rho_ineq * self._P_ddot.T @ s_ay
+
+        # Occlusion avoidance terms (Precomputed Hessian & Vectorized Gradient)
+        if len(self.env.obstacles) > 0:
+            H_occ_total = (rho_occ * len(self.env.obstacles) * self._sum_1_minus_u_sq) * self._PtP
+            H_joint[:nv, :nv] += H_occ_total
+            H_joint[nv:, nv:] += H_occ_total
 
         for oi, obs in enumerate(self.env.obstacles):
             rx_ell, ry_ell, th_ell = self._obs_axes(obs)
             ct, st = np.cos(th_ell), np.sin(th_ell)
-            for si in range(self.num_samples):
-                u = si / max(self.num_samples - 1, 1)
+            
+            cos_a = np.cos(alpha_o[oi])
+            sin_a = np.sin(alpha_o[oi])
+            d = d_o[oi]
 
-                A_occ = (1.0 - u) * self._P
-                H_occ = self.rho_occ * (A_occ.T @ A_occ)
+            ux = ct * rx_ell * cos_a - st * ry_ell * sin_a
+            uy = st * rx_ell * cos_a + ct * ry_ell * sin_a
 
-                H_joint[:nv, :nv] += H_occ
-                H_joint[nv:, nv:] += H_occ
+            b_occ_x = obs.cx - self._u_col * evader_x_exp + ux * d
+            b_occ_y = obs.cy - self._u_col * evader_y_exp + uy * d
 
-                cos_a = np.cos(alpha_o[oi, si, :])
-                sin_a = np.sin(alpha_o[oi, si, :])
-                d = d_o[oi, si, :]
+            # Vectorized gradient calculation
+            weighted_b_occ_x = self._one_minus_u_col * b_occ_x
+            weighted_b_occ_y = self._one_minus_u_col * b_occ_y
 
-                ux = ct * rx_ell * cos_a - st * ry_ell * sin_a
-                uy = st * rx_ell * cos_a + ct * ry_ell * sin_a
-
-                b_occ_x = obs.cx - u * evader_traj[:, 0] + ux * d
-                b_occ_y = obs.cy - u * evader_traj[:, 1] + uy * d
-
-                g_joint[:nv] -= self.rho_occ * A_occ.T @ b_occ_x
-                g_joint[nv:] -= self.rho_occ * A_occ.T @ b_occ_y
+            g_joint[:nv] -= rho_occ * (self._P.T @ np.sum(weighted_b_occ_x, axis=0))
+            g_joint[nv:] -= rho_occ * (self._P.T @ np.sum(weighted_b_occ_y, axis=0))
 
         return H_joint, g_joint
 
@@ -314,20 +396,15 @@ class MasnaviMPC:
         # Ridge regularization to guarantee matrix invertibility
         H_joint += np.eye(2 * nv) * 1e-4
 
-        A_eq_joint = block_diag(self._A_eq, self._A_eq)               
+        # Drop the new H_joint into the top-left of the pre-allocated matrix
+        self._KKT[:2*nv, :2*nv] = H_joint
+        
+        # Build RHS
         b_eq_joint = np.concatenate([b_eq_x, b_eq_y])                 
-
-        num_eq = A_eq_joint.shape[0]
-        
-        # Build symmetric KKT matrix
-        KKT_top = np.hstack([H_joint, A_eq_joint.T])
-        KKT_bot = np.hstack([A_eq_joint, np.zeros((num_eq, num_eq))])
-        KKT = np.vstack([KKT_top, KKT_bot])
-        
         rhs = np.concatenate([-g_joint, b_eq_joint])
         
         try:
-            solution = np.linalg.solve(KKT, rhs)
+            solution = np.linalg.solve(self._KKT, rhs)
             z = solution[:2*nv]
             return z[:nv], z[nv:], True
         except np.linalg.LinAlgError:
