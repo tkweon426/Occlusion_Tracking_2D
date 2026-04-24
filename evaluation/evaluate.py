@@ -64,6 +64,7 @@ def load_log(csv_path):
         "evader_x":        col("evader_x"),
         "evader_y":        col("evader_y"),
         "visibility_score": col("visibility_score"),
+        "tracking_error_score": col("tracking_error_score", float, None),
         "pred_evader_x":        col("pred_evader_x",        float, None),
         "pred_evader_y":        col("pred_evader_y",        float, None),
         "pred_horizon_evader_x": col("pred_horizon_evader_x", float, None),

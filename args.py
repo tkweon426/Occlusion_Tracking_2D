@@ -29,11 +29,19 @@ ENV_FACTORY = lambda: _env            # main.py calls this once; returns the sam
 from controllers.basic_mpc import BasicMPC
 from controllers.basic_tracker import basic_chase_controller
 from controllers.masnavi_mpc import MasnaviMPC
-from controllers.occlusion_mpc import OcclusionMPC
+from controllers.occlusion_mpc import FastOcclusionMPC
+from controllers.occlusion_mpcv2 import FastOcclusionMPC_v2
+from controllers.occlusion_mpcv3 import FastOcclusionMPC_v3
+from controllers.masnaviLQRMPC import MasnaviLQRMPC
+
 #CONTROLLER = BasicMPC(env=_env, sim_dt=DT)
-#CONTROLLER = OcclusionMPC(env=_env, sim_dt=DT)
+CONTROLLER = FastOcclusionMPC(env=_env, sim_dt=DT)
+#CONTROLLER = FastOcclusionMPC_v2(env=_env, sim_dt=DT)
+#CONTROLLER = FastOcclusionMPC_v3(env=_env, sim_dt=DT)
 #CONTROLLER = basic_chase_controller
-CONTROLLER = MasnaviMPC(env=_env, sim_dt=DT)
+#CONTROLLER = MasnaviMPC(env=_env, sim_dt=DT)
+#CONTROLLER = MasnaviLQRMPC(env=_env, sim_dt=DT)
+
 
 
 # --- Drone ---

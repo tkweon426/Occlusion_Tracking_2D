@@ -1,4 +1,4 @@
-#penalty from perpendicular distance to the LOS
+#only penalty from midpoint of LOS
 
 import numpy as np
 from scipy.optimize import minimize
@@ -6,7 +6,7 @@ from predictors.constvel_predictor import ConstVelPredictor
 from predictors.kalman_predictor import KalmanPredictor
 from predictors.attfield_predictor import AttFieldPredictor
 
-class FastOcclusionMPC:
+class FastOcclusionMPC_v2:
     def __init__(
         self,
         env,
@@ -17,11 +17,11 @@ class FastOcclusionMPC:
         d_max=10.0,
         target_distance=6.0,
         a_max=6.87,
-        safety_margin=0.6,
+        safety_margin=0.1,
         w_effort=0.1,
         w_distance=10.0,
-        w_occlusion=50.0,        # Weight of the LoS barrier
-        barrier_steepness=5.0,   # How aggressively the penalty spikes when crossing the boundary
+        w_occlusion=50.0,        # Weight of the Midpoint LoS barrier
+        barrier_steepness=5.0,   # How aggressively the penalty spikes
         cull_radius=25.0,
         kp_yaw=4.0,
         kd_yaw=2.0,
@@ -33,7 +33,6 @@ class FastOcclusionMPC:
         #self._predictor = KalmanPredictor(sim_dt=sim_dt)
         #self._predictor = ConstVelPredictor(sim_dt=sim_dt)
         self._predictor = AttFieldPredictor(sim_dt=sim_dt, obstacles=self.env.obstacles, k_att=10.0, d_min=0.1)
-
 
         self.d_min = d_min
         self.d_max = d_max
@@ -111,13 +110,16 @@ class FastOcclusionMPC:
         dJ_dx = coeff * dx
         dJ_dy = coeff * dy
 
-        # 2. Line of Sight (h(x)) Barrier Cost
+        # 2. Midpoint LoS (h(x)) Barrier Cost
         occ_cost = 0.0
         if self.w_occlusion > 0:
             alpha = self.barrier_steepness
             
+            # Calculate the midpoint of the LoS for all horizon steps
+            mx = 0.5 * (x + ex)
+            my = 0.5 * (y + ey)
+            
             for obs in nearby_obstacles:
-                # Get ellipse params or default to circle
                 if hasattr(obs, 'rx'):
                     rx, ry = obs.rx + self.safety_margin, obs.ry + self.safety_margin
                     theta = obs.theta
@@ -127,57 +129,34 @@ class FastOcclusionMPC:
                 
                 ct, st = np.cos(theta), np.sin(theta)
                 
-                # Transform to obstacle-local space
-                dx_D, dy_D = x - obs.cx, y - obs.cy
-                dx_E, dy_E = ex - obs.cx, ey - obs.cy
+                # Transform midpoint to obstacle-local space
+                dx_M, dy_M = mx - obs.cx, my - obs.cy
                 
-                uD = (dx_D * ct + dy_D * st) / rx
-                vD = (-dx_D * st + dy_D * ct) / ry
-                uE = (dx_E * ct + dy_E * st) / rx
-                vE = (-dx_E * st + dy_E * ct) / ry
+                uM = (dx_M * ct + dy_M * st) / rx
+                vM = (-dx_M * st + dy_M * ct) / ry
                 
-                delU, delV = uE - uD, vE - vD
-                N2 = delU**2 + delV**2 + 1e-6
-                N = np.sqrt(N2)
+                # Distance from origin to midpoint in warped space
+                dM = np.sqrt(uM**2 + vM**2 + 1e-6)
                 
-                # Distance from origin to the LoS line in warped space
-                S = uD * vE - vD * uE
-                S_abs = np.abs(S)
-                d = S_abs / N
-                
-                # Mask: Only penalize if the obstacle is physically between Drone and Evader
-                dot_D = (ex - x)*(obs.cx - x) + (ey - y)*(obs.cy - y)
-                dot_E = (x - ex)*(obs.cx - ex) + (y - ey)*(obs.cy - ey)
-                mask = (dot_D > 0) & (dot_E > 0)
-                
-                # Exponential Barrier function: h(x) = d - 1.0
-                # Cost explodes if d < 1.0 (boundary intersected)
-                P = self.w_occlusion * np.exp(-alpha * (d - 1.0))
-                occ_cost += np.sum(P[mask])
+                # Exponential Barrier function: h(x) = dM - 1.0
+                P = self.w_occlusion * np.exp(-alpha * (dM - 1.0))
+                occ_cost += np.sum(P)
                 
                 # ---- Analytic Chain Rule Jacobians ----
-                # Base derivatives wrt x, y
-                duD_dx, dvD_dx = ct / rx, -st / ry
-                duD_dy, dvD_dy = st / rx, ct / ry
+                # Base derivatives of uM, vM wrt drone positions x, y (incorporates the 0.5 from midpoint)
+                duM_dx, dvM_dx = 0.5 * ct / rx, -0.5 * st / ry
+                duM_dy, dvM_dy = 0.5 * st / rx, 0.5 * ct / ry
                 
-                dS_dx = vE * duD_dx - uE * dvD_dx
-                dS_dy = vE * duD_dy - uE * dvD_dy
-                
-                dN2_dx = -2 * delU * duD_dx - 2 * delV * dvD_dx
-                dN2_dy = -2 * delU * duD_dy - 2 * delV * dvD_dy
-                
-                S_sign = np.sign(S)
-                
-                # Derivative of d
-                dd_dx = (S_sign * dS_dx * N2 - S_abs * 0.5 * dN2_dx) / (N2 * N)
-                dd_dy = (S_sign * dS_dy * N2 - S_abs * 0.5 * dN2_dy) / (N2 * N)
+                # Derivative of dM
+                ddM_dx = (uM * duM_dx + vM * dvM_dx) / dM
+                ddM_dy = (uM * duM_dy + vM * dvM_dy) / dM
                 
                 # Derivative of Penalty
-                dP_dx = -alpha * P * dd_dx
-                dP_dy = -alpha * P * dd_dy
+                dP_dx = -alpha * P * ddM_dx
+                dP_dy = -alpha * P * ddM_dy
                 
-                dJ_dx += np.where(mask, dP_dx, 0.0)
-                dJ_dy += np.where(mask, dP_dy, 0.0)
+                dJ_dx += dP_dx
+                dJ_dy += dP_dy
 
         total_cost = effort_cost + dist_cost + occ_cost
         

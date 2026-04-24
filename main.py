@@ -145,6 +145,9 @@ def main():
                         drone.state[0], drone.state[1],
                         evader.state[0], evader.state[1],
                     ),
+                    "tracking_error_score": (lambda d: 0 if 5.0 <= d <= 10.0 else (-(5.0 - d) if d < 5.0 else -(d - 10.0)))(
+                        np.hypot(drone.state[0] - evader.state[0], drone.state[1] - evader.state[1])
+                    ),
                     "pred_evader_x":        pred_next[0]    if pred_next[0]    is not None else "",
                     "pred_evader_y":        pred_next[1]    if pred_next[1]    is not None else "",
                     "pred_horizon_evader_x": pred_horizon[0] if pred_horizon[0] is not None else "",

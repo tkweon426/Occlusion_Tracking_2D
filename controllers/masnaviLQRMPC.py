@@ -25,8 +25,7 @@ from predictors.constvel_predictor import ConstVelPredictor
 from predictors.kalman_predictor import KalmanPredictor
 from predictors.attfield_predictor import AttFieldPredictor
 
-
-class MasnaviMPC:
+class MasnaviLQRMPC:
     def __init__(
         self,
         env,
@@ -40,6 +39,10 @@ class MasnaviMPC:
         v_max=8.0,
         a_max=6.87,
         weight_smoothness=20.0,
+        weight_pos=8.0,
+        weight_vel=2.0,
+        weight_terminal=25.0,
+        desired_offset=4.0,
         rho_fov=10.0,
         rho_occ=100.0,
         rho_ineq=10.0,
@@ -63,6 +66,10 @@ class MasnaviMPC:
         self.a_max = a_max
         
         self.weight_smoothness = weight_smoothness
+        self.weight_pos = weight_pos
+        self.weight_vel = weight_vel
+        self.weight_terminal = weight_terminal
+        self.desired_offset = desired_offset
         self.rho_fov = rho_fov
         self.rho_occ = rho_occ
         self.rho_ineq = rho_ineq
@@ -77,8 +84,9 @@ class MasnaviMPC:
 
         self._g = 9.81
         #self._predictor = KalmanPredictor(sim_dt=sim_dt)
-        #self._predictor = ConstVelPredictor(sim_dt=sim_dt)
-        self._predictor = AttFieldPredictor(sim_dt=sim_dt, obstacles=self.env.obstacles, k_att=10.0, d_min=0.1)
+        self._predictor = ConstVelPredictor(sim_dt=sim_dt)
+        #self._predictor = AttFieldPredictor(sim_dt=sim_dt, obstacles=self.env.obstacles, k_att=10.0, d_min=0.1)
+
         self._fallback_count = 0
 
         self._c_x_prev = np.zeros(nvar)
@@ -87,10 +95,20 @@ class MasnaviMPC:
         # Precompute Basis Matrices
         self._P, self._P_dot, self._P_ddot = self._build_bernstein_basis()
 
-        self._H_smooth = weight_smoothness * (self._P_ddot.T @ self._P_ddot)
         self._PtP = self._P.T @ self._P
         self._PdotTPdot = self._P_dot.T @ self._P_dot
         self._PddotTPddot = self._P_ddot.T @ self._P_ddot
+
+        # Existing smoothness penalty: ||p_ddot||^2
+        self._H_smooth = self.weight_smoothness * self._PddotTPddot
+
+        # New LQR-style stage penalties
+        self._H_pos = self.weight_pos * self._PtP
+        self._H_vel = self.weight_vel * self._PdotTPdot
+
+        # New LQR-style terminal penalty on final predicted position
+        self._P_terminal = self._P[-1:, :]
+        self._H_terminal = self.weight_terminal * (self._P_terminal.T @ self._P_terminal)
 
         self._A_eq = np.vstack([
             self._P[0, :],        
@@ -345,6 +363,40 @@ class MasnaviMPC:
         g_joint[:nv] = -lambda_x
         g_joint[nv:] = -lambda_y
 
+        # ------------------------------------------------------------
+        # New LQR-style reference penalties
+        # ------------------------------------------------------------
+        # Desired position: keep a desired offset from the evader
+        p_des_x = evader_traj[:, 0] - self.desired_offset * np.cos(alpha_r)
+        p_des_y = evader_traj[:, 1] - self.desired_offset * np.sin(alpha_r)
+
+        # Desired velocity: use finite-difference evader velocity
+        dt_h = self.t_fin / max(self.num - 1, 1)
+        v_des_x = np.gradient(evader_traj[:, 0], dt_h)
+        v_des_y = np.gradient(evader_traj[:, 1], dt_h)
+
+        # Terminal desired position
+        pN_des_x = p_des_x[-1]
+        pN_des_y = p_des_y[-1]
+
+        # New penalty 1: stage position penalty
+        H_joint[:nv, :nv] += self._H_pos
+        H_joint[nv:, nv:] += self._H_pos
+        g_joint[:nv] -= self.weight_pos * (self._P.T @ p_des_x)
+        g_joint[nv:] -= self.weight_pos * (self._P.T @ p_des_y)
+
+        # New penalty 2: stage velocity penalty
+        H_joint[:nv, :nv] += self._H_vel
+        H_joint[nv:, nv:] += self._H_vel
+        g_joint[:nv] -= self.weight_vel * (self._P_dot.T @ v_des_x)
+        g_joint[nv:] -= self.weight_vel * (self._P_dot.T @ v_des_y)
+
+        # New penalty 3: terminal position penalty
+        H_joint[:nv, :nv] += self._H_terminal
+        H_joint[nv:, nv:] += self._H_terminal
+        g_joint[:nv] -= self.weight_terminal * (self._P_terminal.T[:, 0] * pN_des_x)
+        g_joint[nv:] -= self.weight_terminal * (self._P_terminal.T[:, 0] * pN_des_y)
+
         # FOV tracking term
         b_tar_x = evader_traj[:, 0] + d_r * np.cos(alpha_r)
         b_tar_y = evader_traj[:, 1] + d_r * np.sin(alpha_r)
@@ -373,7 +425,7 @@ class MasnaviMPC:
         for oi, obs in enumerate(self.env.obstacles):
             rx_ell, ry_ell, th_ell = self._obs_axes(obs)
             ct, st = np.cos(th_ell), np.sin(th_ell)
-            
+
             cos_a = np.cos(alpha_o[oi])
             sin_a = np.sin(alpha_o[oi])
             d = d_o[oi]
