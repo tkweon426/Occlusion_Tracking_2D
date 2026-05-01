@@ -22,9 +22,8 @@ class AttFieldPredictor:
     smooth_alpha : float
         EMA weight on the newest velocity sample (0 = frozen, 1 = raw FD).
     k_att : float
-        Attractive gain.  The maximum displacement applied per obstacle per
-        prediction step is k_att * horizon_dt (metres), reached when the
-        rollout point is exactly on the obstacle surface.
+        Attractive gain.  Displacement per step saturates at k_att * horizon_dt
+        (metres) as distance grows large; near the surface it approaches zero.
     d_min : float
         Minimum clearance (metres) from the obstacle surface.  Predicted
         positions are projected outward so they are never closer than this.
@@ -69,18 +68,20 @@ class AttFieldPredictor:
         self._prev_pos = pos.copy()
 
         # --- Iterative rollout with attractive field ---
+        # v_att accumulates attraction like gravity: each step adds acceleration
+        # to the running velocity so the curve bends progressively, not abruptly.
         traj = np.empty((N + 1, 2))
         traj[0] = pos
         p = pos.copy()
-        for _ in range(N):
-            # Base constant-velocity step
-            p = p + horizon_dt * self._vel
+        v_att = np.zeros(2)
+        for k in range(N):
+            p = p + horizon_dt * (self._vel + v_att)
 
-            # Apply attractive displacement and surface clamp per obstacle
             for obs in self._obstacles:
-                p = self._apply_obstacle(p, obs, horizon_dt)
+                v_att = v_att + horizon_dt * self._attractive_accel(p, obs)
+                p = self._clamp_to_surface(p, obs)
 
-            traj[_ + 1] = p
+            traj[k + 1] = p
 
         return traj
 
@@ -108,32 +109,30 @@ class AttFieldPredictor:
             r_min = obs.radius + self._d_min
         return r_surf, r_min
 
-    def _apply_obstacle(self, p, obs, horizon_dt):
-        """Apply attraction toward obs and clamp to minimum safe distance."""
+    def _attractive_accel(self, p, obs):
+        """Return acceleration vector (m/s²) pulling p toward obs."""
         c = np.array([obs.cx, obs.cy])
-        delta = c - p          # vector from p toward center
+        delta = c - p
         d = np.linalg.norm(delta)
+        if d < 1e-6:
+            return np.zeros(2)
+        u = delta / d
+        r_surf, r_min = self._directional_radii(u, obs)
+        if d <= r_min:
+            return np.zeros(2)
+        surface_d = max(d - r_surf, 1e-3)
+        a_mag = min(self._k_att / surface_d ** 2, 6.87)# instead of self._k_att * 10
+        return a_mag * u
 
+    def _clamp_to_surface(self, p, obs):
+        """Project p outward if it has landed inside the minimum safe boundary."""
+        c = np.array([obs.cx, obs.cy])
+        delta = p - c
+        d = np.linalg.norm(delta)
         if d < 1e-6:
             return p
-
-        u = delta / d          # unit vector toward center
-        r_surf, r_min = self._directional_radii(u, obs)
-        surface_d = d - r_surf
-
-        # Attract when outside the minimum safe zone
-        if d > r_min:
-            # Bounded magnitude: max = k_att * horizon_dt near the surface
-            F_mag = self._k_att / (1.0 + surface_d ** 2)
-            p = p + F_mag * u * horizon_dt
-
-        # Clamp: project outward if inside minimum safe boundary
-        delta_new = p - c
-        d_new = np.linalg.norm(delta_new)
-        if d_new > 1e-6:
-            u_new = delta_new / d_new
-            _, r_min_new = self._directional_radii(u_new, obs)
-            if d_new < r_min_new:
-                p = c + u_new * r_min_new
-
+        u = delta / d
+        _, r_min = self._directional_radii(u, obs)
+        if d < r_min:
+            p = c + u * r_min
         return p

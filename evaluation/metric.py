@@ -150,6 +150,9 @@ def make_summary_text(data, dt, log_path):
         "",
         "── Visibility Score ─────────────────────────────────────────",
         f"  Accumulated total : {vis['total']:.4f}",
+        f"  Average           : {vis['mean']:.4f}",
+        f"  Max               : {vis['mx']:.4f}",
+        f"  Min               : {vis['mn']:.4f}",
         "",
         "── Tracking Error Score ─────────────────────────────────────",
         f"  Accumulated total : {terr['total']:.4f}",
@@ -224,6 +227,8 @@ def main():
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
 
+    vis_stats = stats(data["visibility_score"])
+    print(f"Visibility — mean: {vis_stats['mean']:.4f}  max: {vis_stats['mx']:.4f}  min: {vis_stats['mn']:.4f}")
     print(f"Report saved: {report_path}")
 
 

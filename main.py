@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import json
 import os
 import time
 import numpy as np
@@ -21,6 +22,10 @@ def main():
     parser.add_argument(
         "--log", nargs="?", const="results/log.csv", metavar="FILE",
         help="Log simulation data to a CSV file. Optionally specify a filename (default: results/log_<timestamp>.csv).",
+    )
+    parser.add_argument(
+        "--end", type=int, default=None, metavar="STEP",
+        help="Terminate the simulation after this many steps.",
     )
     cli = parser.parse_args()
 
@@ -121,6 +126,8 @@ def main():
                 pred_traj = getattr(args.CONTROLLER, "last_evader_traj", None)
                 pred_next     = pred_traj[1]  if (pred_traj is not None and len(pred_traj) > 1) else (None, None)
                 pred_horizon  = pred_traj[-1] if (pred_traj is not None and len(pred_traj) > 1) else (None, None)
+                mpc_dt        = getattr(args.CONTROLLER, "dt", "")
+                horizon_full  = json.dumps(pred_traj.tolist()) if pred_traj is not None else ""
                 log_rows.append({
                     "timestep":        step,
                     "sim_time_s":      round(step * dt, 6),
@@ -152,6 +159,8 @@ def main():
                     "pred_evader_y":        pred_next[1]    if pred_next[1]    is not None else "",
                     "pred_horizon_evader_x": pred_horizon[0] if pred_horizon[0] is not None else "",
                     "pred_horizon_evader_y": pred_horizon[1] if pred_horizon[1] is not None else "",
+                    "mpc_dt":               mpc_dt,
+                    "pred_horizon_full":    horizon_full,
                 })
 
         # 6. Render
@@ -169,6 +178,9 @@ def main():
         # 7. Enforce timestep (runs the loop at roughly 1/dt frames per second)
         clock.tick(int(1 / dt))
         step += 1
+
+        if cli.end is not None and step >= cli.end:
+            running = False
 
     # Clean up and close window
     renderer.quit()

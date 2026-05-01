@@ -7,6 +7,7 @@
 
 import argparse
 import csv
+import json
 import math
 import os
 import sys
@@ -69,7 +70,21 @@ def load_log(csv_path):
         "pred_evader_y":        col("pred_evader_y",        float, None),
         "pred_horizon_evader_x": col("pred_horizon_evader_x", float, None),
         "pred_horizon_evader_y": col("pred_horizon_evader_y", float, None),
+        "mpc_dt":                col("mpc_dt", float, None),
     }
+
+    # Parse the full evader prediction horizon (JSON-encoded list of [x, y] pairs)
+    data["pred_horizon_full"] = []
+    for r in rows:
+        raw = r.get("pred_horizon_full", "")
+        if raw and raw.strip():
+            try:
+                data["pred_horizon_full"].append(json.loads(raw))
+            except (json.JSONDecodeError, ValueError):
+                data["pred_horizon_full"].append(None)
+        else:
+            data["pred_horizon_full"].append(None)
+
     return data
 
 
@@ -92,6 +107,12 @@ def _compute_bounds(data, env, padding=3.0):
     if hor_x:
         all_x += hor_x
         all_y += hor_y
+
+    for traj in data.get("pred_horizon_full", []):
+        if traj is not None:
+            for pt in traj:
+                all_x.append(pt[0])
+                all_y.append(pt[1])
 
     xmin, xmax = min(all_x), max(all_x)
     ymin, ymax = min(all_y), max(all_y)
@@ -246,6 +267,57 @@ def draw_predicted_horizon(ax, data):
     return [sc]
 
 
+def draw_full_horizon_intervals(ax, data, sim_dt=0.01, sample_interval_s=1.0):
+    """
+    At every `sample_interval_s` of simulation time, draw the full evader
+    prediction horizon rollout as a connected line.  Each rollout arm starts at
+    the evader's actual position at that moment and extends through all N
+    predicted positions, giving a 'prediction fan' view of the MPC planner.
+
+    Parameters
+    ----------
+    sample_interval_s : float
+        How often (in simulation seconds) to draw a horizon rollout arm.
+        Default 1.0 → one arm per second of simulation time.
+    """
+    trajs = data["pred_horizon_full"]
+    sim_times = data["sim_time_s"]
+    if not any(t is not None for t in trajs):
+        return []
+
+    # Pick which simulation timesteps to draw, sampled at sample_interval_s
+    sampled_indices = []
+    next_sample = 0.0
+    for i, t in enumerate(sim_times):
+        if t is None:
+            continue
+        if t >= next_sample - 1e-9:
+            sampled_indices.append(i)
+            next_sample += sample_interval_s
+
+    # Use a colormap to colour arms chronologically (early=cool, late=warm)
+    cmap = plt.cm.plasma
+    n_arms = len(sampled_indices)
+
+    artists = []
+    for arm_idx, i in enumerate(sampled_indices):
+        traj = trajs[i]
+        if traj is None:
+            continue
+        xs = [pt[0] for pt in traj]
+        ys = [pt[1] for pt in traj]
+        color = cmap(arm_idx / max(n_arms - 1, 1))
+        sim_t = sim_times[i]
+        ln, = ax.plot(xs, ys, color=color, linewidth=1.0, alpha=0.6,
+                      zorder=5, label=f"Horizon t={sim_t:.1f}s" if arm_idx == 0 else "_")
+        # dot at the tip of the horizon
+        tip, = ax.plot(xs[-1], ys[-1], marker="x", markersize=5,
+                       color=color, linewidth=0, alpha=0.8, zorder=6,
+                       label="_")
+        artists.extend([ln, tip])
+    return artists
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -272,8 +344,10 @@ def main():
 
     env = ENV_CHOICES[cli.env]() if cli.env else sim_args.ENV_FACTORY()
 
-    has_predictions = any(v is not None for v in data["pred_evader_x"])
-    has_horizon     = any(v is not None for v in data["pred_horizon_evader_x"])
+    has_predictions   = any(v is not None for v in data["pred_evader_x"])
+    has_horizon       = any(v is not None for v in data["pred_horizon_evader_x"])
+    has_horizon_full  = any(v is not None for v in data["pred_horizon_full"])
+    mpc_dt_val        = next((v for v in data["mpc_dt"] if v is not None), 0.1)
 
     # ------------------------------------------------------------------
     # Figure layout
@@ -311,19 +385,24 @@ def main():
     los_artists     = draw_los_samples(ax, data, env, dt)
     pred_artists    = draw_predicted_evader(ax, data)
     horizon_artists = draw_predicted_horizon(ax, data)
+    full_hor_artists = draw_full_horizon_intervals(ax, data, sim_dt=dt)
+    # hide full horizon by default until the user toggles it on
+    for a in full_hor_artists:
+        a.set_visible(False)
 
     # Map toggle label → list of artists
     element_artists = {
-        "Env (obstacles)":       obs_artists,
-        "Drone start":           drone_start,
-        "Evader start":          evader_start,
-        "Drone end":             drone_end,
-        "Evader end":            evader_end,
-        "Drone trajectory":      drone_traj,
-        "Evader trajectory":     evader_traj,
-        "Line of sight":         los_artists,
-        "Pred evader (next)":    pred_artists,
-        "Pred evader (horizon)": horizon_artists,
+        "Env (obstacles)":           obs_artists,
+        "Drone start":               drone_start,
+        "Evader start":              evader_start,
+        "Drone end":                 drone_end,
+        "Evader end":                evader_end,
+        "Drone trajectory":          drone_traj,
+        "Evader trajectory":         evader_traj,
+        "Line of sight":             los_artists,
+        "Pred evader (next)":        pred_artists,
+        "Pred evader (horizon)":     horizon_artists,
+        "Full horizon (1 s steps)":  full_hor_artists,
     }
 
     # ------------------------------------------------------------------
@@ -333,9 +412,10 @@ def main():
     actives = [bool(v) for v in [
         obs_artists, drone_start, evader_start, drone_end, evader_end,
         drone_traj, evader_traj, los_artists, pred_artists, horizon_artists,
+        False,  # full horizon off by default
     ]]
 
-    ax_check = fig.add_axes([0.76, 0.28, 0.22, 0.62])
+    ax_check = fig.add_axes([0.76, 0.24, 0.22, 0.66])
     ax_check.set_title("Toggle layers", fontsize=10, pad=4)
     check = CheckButtons(ax_check, labels, actives)
 
@@ -379,6 +459,8 @@ def main():
         f"Obs: {len(env.obstacles)}",
         f"Pred (next): {'yes' if has_predictions else 'no'}",
         f"Pred (horizon): {'yes' if has_horizon else 'no'}",
+        f"Full horizon: {'yes' if has_horizon_full else 'no'}",
+        f"MPC dt: {mpc_dt_val} s",
         f"LOS interval: 1 s",
     ]
     fig.text(0.765, 0.06, "\n".join(info_lines), fontsize=8,

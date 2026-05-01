@@ -30,19 +30,19 @@ from controllers.basic_mpc import BasicMPC
 from controllers.basic_tracker import basic_chase_controller
 from controllers.masnavi_mpc import MasnaviMPC
 from controllers.occlusion_mpc import FastOcclusionMPC
+from controllers.occlusion_mpc_inv import InvOcclusionMPC
 from controllers.occlusion_mpcv2 import FastOcclusionMPC_v2
 from controllers.occlusion_mpcv3 import FastOcclusionMPC_v3
 from controllers.masnaviLQRMPC import MasnaviLQRMPC
 
 #CONTROLLER = BasicMPC(env=_env, sim_dt=DT)
 CONTROLLER = FastOcclusionMPC(env=_env, sim_dt=DT)
+#CONTROLLER = InvOcclusionMPC(env=_env, sim_dt=DT)
 #CONTROLLER = FastOcclusionMPC_v2(env=_env, sim_dt=DT)
 #CONTROLLER = FastOcclusionMPC_v3(env=_env, sim_dt=DT)
 #CONTROLLER = basic_chase_controller
 #CONTROLLER = MasnaviMPC(env=_env, sim_dt=DT)
 #CONTROLLER = MasnaviLQRMPC(env=_env, sim_dt=DT)
-
-
 
 # --- Drone ---
 DRONE_START    = (0.0, -3.5)          # initial (x, y) in metres

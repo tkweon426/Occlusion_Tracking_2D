@@ -1,17 +1,20 @@
 #penalty from perpendicular distance to the LOS
 
+#written by Thomas Hyunchang Kweon
+
 import numpy as np
 from scipy.optimize import minimize
 from predictors.constvel_predictor import ConstVelPredictor
 from predictors.kalman_predictor import KalmanPredictor
 from predictors.attfield_predictor import AttFieldPredictor
+from predictors.velacc_predictor import VelAccPredictor
 
 class FastOcclusionMPC:
     def __init__(
         self,
         env,
         dt=0.1,
-        N=15,
+        N=25,
         sim_dt=0.01,
         d_min=5.0,
         d_max=10.0,
@@ -26,14 +29,16 @@ class FastOcclusionMPC:
         kp_yaw=4.0,
         kd_yaw=2.0,
         tau_z_max=1.0,
+        predictor_k_att=9,
+        predictor_d_min=0.1,
     ):
         self.env = env
         self.dt = dt
         self.N = N
         #self._predictor = KalmanPredictor(sim_dt=sim_dt)
         #self._predictor = ConstVelPredictor(sim_dt=sim_dt)
-        self._predictor = AttFieldPredictor(sim_dt=sim_dt, obstacles=self.env.obstacles, k_att=10.0, d_min=0.1)
-
+        self._predictor = AttFieldPredictor(sim_dt=sim_dt, obstacles=self.env.obstacles,k_att=predictor_k_att, d_min=predictor_d_min)
+        #self._predictor = VelAccPredictor(sim_dt=sim_dt)
 
         self.d_min = d_min
         self.d_max = d_max
@@ -70,14 +75,21 @@ class FastOcclusionMPC:
         evader_xy = np.asarray(evader_state[:2], dtype=float)
 
         evader_traj = self._predictor.predict(evader_xy, self.dt, self.N)
-        
+        self.last_evader_traj = evader_traj
+
         u_opt, success = self._solve_mpc(drone_xy_vel, evader_traj)
 
         if success and np.isfinite(u_opt).all():
             ax_des, ay_des = u_opt[0], u_opt[1]
             self._shift_warm_start(u_opt)
+            drone_rx, drone_ry = self._get_states_vectorized(u_opt, drone_xy_vel)
+            self.last_drone_traj = np.column_stack([
+                np.concatenate([[x], drone_rx]),
+                np.concatenate([[y], drone_ry]),
+            ])
         else:
             ax_des, ay_des = self._fallback(drone_xy_vel, evader_traj[0], u_opt)
+            self.last_drone_traj = None
 
         theta, phi = self._virtual_to_angles(ax_des, ay_des, psi)
         tau_z = self._yaw_control(drone_state, evader_traj[0])
