@@ -156,7 +156,6 @@ def main():
             frame_timer += dt
             if frame_timer >= 1.0 / VIDEO_FPS:
                 frame_timer -= 1.0 / VIDEO_FPS
-                # surfarray gives (width, height, 3); imageio expects (height, width, 3)
                 frame = pygame.surfarray.array3d(renderer.screen).transpose(1, 0, 2)
                 frames.append(frame)
 

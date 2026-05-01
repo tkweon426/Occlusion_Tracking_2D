@@ -2,15 +2,7 @@ import numpy as np
 
 class ScriptedTrajectory:
     """
-    A time-indexed waypoint trajectory. The evader is steered toward successive
-    waypoints; each waypoint carries a target speed so you get smooth deceleration.
-
-    Phases
-    ------
-    1. Approach   - move from spawn toward (0, 7), the orbit entry point.
-    2. Orbit      - one full clockwise loop around the obstacle at (3, 7).
-    3. Straight   - travel in a straight line away from the obstacle.
-    4. Decelerate - slow to a stop at the destination.
+    waypoint trajectory for single circle environment
     """
 
     _REACH_THRESHOLD = 0.25
@@ -21,7 +13,7 @@ class ScriptedTrajectory:
         obstacle_cy: float = 7.0,
         orbit_radius: float = 3.0,   # distance from obstacle centre to orbit path
         orbit_speed: float = 4.0,    # m/s while looping
-        travel_speed: float = 4.0,   # m/s on the straight-line leg
+        travel_speed: float = 4.0,   # m/s on the straight line path
         stop_point: tuple = (-8.0, -4.0),
         orbit_points: int = 72,      # resolution of the circular arc (one per 5 deg)
     ):
@@ -37,10 +29,9 @@ class ScriptedTrajectory:
         self._idx = 0
 
     def _build_waypoints(self):
-        """Returns list of (x, y, speed) tuples describing the full path."""
+        """returns list of (x, y, speed) tuples describing the full path"""
         wps = []
 
-        # (0, 7) is the leftmost point of the orbit: cx=3, r=3, angle=π
         entry_angle = np.pi
         entry = (
             self._cx + self._r * np.cos(entry_angle),
@@ -48,7 +39,6 @@ class ScriptedTrajectory:
         )
         wps.append((*entry, self._orbit_speed))
 
-        # θ goes from π down to π - 2π (clockwise in standard math coords)
         for i in range(1, self._n + 1):
             theta = entry_angle - 2 * np.pi * i / self._n
             wx = self._cx + self._r * np.cos(theta)

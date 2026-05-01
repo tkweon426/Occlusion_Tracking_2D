@@ -4,25 +4,6 @@ from predictors.constvel_predictor import ConstVelPredictor
 
 
 class BasicMPC:
-    """
-    Model Predictive Controller for the occlusion-tracking drone.
-
-    Optimization variables are world-frame virtual accelerations [ax, ay] over
-    a finite horizon. These are converted to body angles (theta, phi) via the
-    same inverse-kinematics as basic_tracker.py. Yaw is controlled independently
-    with a PD loop.
-
-    Hard constraints:
-      - dist(drone_k, evader_k) >= d_min  at every horizon step (lower bound)
-      - dist(drone_N, evader_N) <= d_max  at terminal step only (upper bound)
-      - dist(drone_k, obs) >= obs.radius + safety_margin  per obstacle per step
-
-    Evader positions are predicted via ConstVelPredictor (constant-velocity
-    assumption with EMA-smoothed finite-difference velocity estimate).
-
-    The environment is passed at construction time, so swapping to a different
-    environment in args.py automatically updates the obstacle list seen here.
-    """
 
     def __init__(
         self,
@@ -109,17 +90,7 @@ class BasicMPC:
         return self.w_effort * np.dot(u_flat, u_flat)
 
     def _all_constraints(self, u_flat, drone_xy_vel, evader_traj):
-        """
-        Single vector-valued constraint function — all constraints in one call.
-
-        Returns a 1D array where every element must be >= 0 for SLSQP.
-        Using one vector function instead of many scalar functions means scipy
-        only needs n+1 rollouts per gradient step (vs m*(n+1) for m scalars).
-
-        The upper bound on distance is applied only at the terminal step, not
-        every step. This keeps the problem feasible when the evader has moved
-        outside range — the optimizer has the full horizon to close the gap.
-        """
+       
         states = self._get_states(u_flat, drone_xy_vel)
         n_obs = len(self.env.obstacles)
         cons = np.empty(self.N * (1 + n_obs) + 1)

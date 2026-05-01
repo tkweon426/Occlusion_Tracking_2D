@@ -1,20 +1,7 @@
 # controllers/masnavi_mpc.py
 """
-Multi-Convex MPC for occlusion-free target tracking.
-
-Implements the Split-Bregman Alternating Minimization algorithm from:
-  "Real-Time Multi-Convex Model Predictive Control for
-   Occlusion Free Target Tracking" (Masnavi et al., 2021)
-
-Features aligned with the paper:
-  - 10th-order Bernstein polynomial trajectory representation (Eq 8).
-  - Explicit multi-convex block splitting (xi_1, xi_2, xi_3) (Eq 22).
-  - Exact KKT System Matrix Solve.
-  - Standard Split-Bregman multiplier updates (Eq 29).
-  - Joint QP over [c_x (11), c_y (11)] = 22 variables.
-  - Unfiltered occlusion projection (Eq 15).
-
-Optimized for real-time performance via strict vectorization and pre-allocation.
+Implementation of "Real-Time Multi-Convex Model Predictive Control for
+Occlusion Free Target Tracking" (Masnavi et al., 2021)
 """
 
 import numpy as np

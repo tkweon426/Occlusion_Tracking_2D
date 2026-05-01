@@ -1,14 +1,7 @@
 import numpy as np
 
 def basic_chase_controller(drone_state, evader_state):
-    """
-    World-frame PD controller with full theta+phi actuation.
-
-    Rather than yaw-then-pitch, we compute a desired world-frame acceleration
-    toward the evader and invert the drone kinematics to find the required
-    (theta, phi) pair. This lets the drone accelerate in any direction
-    regardless of which way it is currently facing.
-    """
+   
     x, y, psi, x_dot, y_dot, psi_dot = drone_state
     ex, ey = evader_state
     g = 9.81
@@ -28,8 +21,6 @@ def basic_chase_controller(drone_state, evader_state):
         ax_des *= a_max / a_mag
         ay_des *= a_max / a_mag
 
-    # From dynamics:  [ax, ay] = g * R(psi) * [tan θ, tan φ]ᵀ
-    # So:             [tan θ, tan φ] = (1/g) * R(psi)ᵀ * [ax, ay]
     c, s = np.cos(psi), np.sin(psi)
     tan_theta =  (c * ax_des + s * ay_des) / g
     tan_phi   =  (-s * ax_des + c * ay_des) / g

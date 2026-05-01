@@ -48,9 +48,8 @@ class BaseEnvironment:
 
     def los_clearance(self, x1, y1, x2, y2) -> float:
         """Minimum signed clearance between the LOS segment and any obstacle.
-
         Positive = the segment clears all obstacles by at least this distance.
-        Negative = the segment is occluded (penetrates an obstacle by this depth).
+        Negative = the segment is occluded (penetrates an obstacle by this depth)
         Returns +inf when there are no obstacles.
         """
         if not self.obstacles:
@@ -75,7 +74,7 @@ def _point_in_ellipse(x, y, obs: EllipseObstacle, margin: float = 0.0) -> bool:
 
 
 def _segment_intersects_ellipse(x1, y1, x2, y2, obs: EllipseObstacle) -> bool:
-    """Transform segment into the ellipse's normalized unit-circle frame, then check."""
+    """Transform segment into the ellipse's normalized unit-circle frame"""
     ct, st = math.cos(obs.theta), math.sin(obs.theta)
 
     def to_norm(x, y):
@@ -91,7 +90,7 @@ def _segment_intersects_ellipse(x1, y1, x2, y2, obs: EllipseObstacle) -> bool:
 
 
 def _segment_intersects_circle(x1, y1, x2, y2, cx, cy, r) -> bool:
-    """Closest-point-on-segment test for a circle."""
+    """test for a circle"""
     dx = x2 - x1
     dy = y2 - y1
     fx = x1 - cx
@@ -113,7 +112,6 @@ def _segment_intersects_circle(x1, y1, x2, y2, cx, cy, r) -> bool:
 
 
 def _segment_min_dist_to_point(x1, y1, x2, y2, px, py) -> float:
-    """Minimum distance from point (px,py) to the segment (x1,y1)-(x2,y2)."""
     dx, dy = x2 - x1, y2 - y1
     len_sq = dx * dx + dy * dy
     if len_sq < 1e-12:
@@ -123,12 +121,9 @@ def _segment_min_dist_to_point(x1, y1, x2, y2, px, py) -> float:
 
 
 def _segment_clearance_circle(x1, y1, x2, y2, cx, cy, r) -> float:
-    """Signed clearance: distance from segment to circle edge (negative if intersecting)."""
     return _segment_min_dist_to_point(x1, y1, x2, y2, cx, cy) - r
 
-
 def _segment_clearance_ellipse(x1, y1, x2, y2, obs: EllipseObstacle) -> float:
-    """Signed clearance in the ellipse's normalized unit-circle frame."""
     ct, st = math.cos(obs.theta), math.sin(obs.theta)
 
     def to_norm(x, y):
