@@ -137,9 +137,9 @@ EVADER_CONTROLLER = None                         # WASD keyboard control
 |------------|-------------|
 | `basic_tracker` | PD controller, no obstacle avoidance |
 | `BasicMPC` | MPC tracking without occlusion cost |
-| `FastOcclusionMPC` | MPC with LoS barrier penalty and evader prediction |
+| `FastOcclusionMPC` | MPC with LoS barrier penalty and evader prediction (Hyunchang Kweon Thomas) |
 | `MasnaviMPC` | Occlusion-aware MPC based on Masnavi et al. formulation |
-| `MasnaviMPCfull` | Full variant of the Masnavi MPC |
+| `MasnaviMPCfull` | Full variant of the Masnavi MPC (Chenyu Chang)|
 
 ---
 
