@@ -22,3 +22,15 @@ conda activate tracking_sim
 ```
 python3 main.py
 ```
+
+Arguments to modify the run 
+```
+--record
+# records the run as a 60fps video
+
+--log
+# logs the simulation run information, including compute times for controller
+
+--leave_trajectory
+# leaves trajectory as low opacity lines 
+```

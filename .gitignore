@@ -1,5 +1,11 @@
+# Recorded demonstrations
+results/*
+!results/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 # macOS
 .DS_Store
-
-# Results
-results/
