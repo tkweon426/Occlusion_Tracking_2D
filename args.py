@@ -18,6 +18,7 @@ from controllers.occlusion_mpc_inv import InvOcclusionMPC
 from controllers.occlusion_mpcv2 import FastOcclusionMPC_v2
 from controllers.occlusion_mpcv3 import FastOcclusionMPC_v3
 from controllers.masnaviLQRMPC import MasnaviLQRMPC
+from controllers.masnavi_mpc_full import MasnaviMPCfull
 
 #CONTROLLER = BasicMPC(env=_env, sim_dt=DT)
 CONTROLLER = FastOcclusionMPC(env=_env, sim_dt=DT)
@@ -38,6 +39,7 @@ EVADER_RADIUS  = 0.3
 
 from controllers.scripted_evader_1 import ScriptedTrajectory
 from controllers.scripted_evader_2 import ScriptedTrajectory_2
+from controllers.scripted_evader_3 import ScriptedTrajectory_3
 #EVADER_CONTROLLER = ScriptedTrajectory(obstacle_cx=3.0, obstacle_cy=7.0)
 EVADER_CONTROLLER = ScriptedTrajectory_2(obstacle_cx=3.0, obstacle_cy=7.0)
 #EVADER_CONTROLLER = None  # None → keyboard, object → scripted
