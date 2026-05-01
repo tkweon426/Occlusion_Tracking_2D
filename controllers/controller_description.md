@@ -9,10 +9,6 @@
     - made to demonstrate the case of not considering occlusion 
 
 
-
-
-
-
 ## Evader Scripts: 
 - manual_control.py
     - allows w,a,s,d control of the evader manually by human input
