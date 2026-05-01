@@ -1,6 +1,3 @@
-# evaluation/compare_figure.py
-# Produces a 1x3 comparison figure for three simulation logs, all at the same scale.
-#
 # Usage:
 #   python evaluation/compare_figure.py
 #   python evaluation/compare_figure.py --save comparison.png
@@ -20,10 +17,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import args as sim_args
 from environments.base_env import CircleObstacle, EllipseObstacle
 
-# ---------------------------------------------------------------------------
-# Paths and labels
-# ---------------------------------------------------------------------------
-
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 PANELS = [
@@ -31,10 +24,6 @@ PANELS = [
     ("results/mpc_velacc.csv",    "Vel+Acc Predictor"),
     ("results/mpc_att.csv",       "Attractor Field Predictor"),
 ]
-
-# ---------------------------------------------------------------------------
-# Data loading (shared with evaluate.py)
-# ---------------------------------------------------------------------------
 
 import csv
 
@@ -78,10 +67,6 @@ def load_log(csv_path):
     return data
 
 
-# ---------------------------------------------------------------------------
-# Bounds computation
-# ---------------------------------------------------------------------------
-
 def _data_extents(data):
     """Return (xmin, xmax, ymin, ymax) covering all trajectory + horizon points."""
     xs = list(data["drone_x"]) + list(data["evader_x"])
@@ -111,10 +96,6 @@ def compute_shared_bounds(all_data, env, padding=3.0):
     return xmin - padding, xmax + padding, ymin - padding, ymax + padding
 
 
-# ---------------------------------------------------------------------------
-# Drawing helpers
-# ---------------------------------------------------------------------------
-
 def draw_obstacles(ax, env):
     obs_fill = (80/255, 80/255, 80/255)
     obs_edge = (40/255, 40/255, 40/255)
@@ -143,7 +124,6 @@ def draw_trajectories(ax, data):
 
 
 def draw_endpoints(ax, data):
-    # Drone start / end
     ax.plot(data["drone_x"][0], data["drone_y"][0],
             marker="^", markersize=10, color=(0.1, 0.3, 0.9),
             markeredgecolor="navy", linewidth=0, zorder=6, label="Drone start")
@@ -151,7 +131,6 @@ def draw_endpoints(ax, data):
             marker="^", markersize=10, color=(0.1, 0.3, 0.9),
             markeredgecolor="navy", markerfacecolor="none",
             linewidth=0, zorder=6, label="Drone end")
-    # Evader start / end
     ax.plot(data["evader_x"][0], data["evader_y"][0],
             marker="o", markersize=9, color=(0.85, 0.1, 0.1),
             markeredgecolor="darkred", linewidth=0, zorder=6, label="Evader start")
@@ -193,10 +172,6 @@ def draw_full_horizon(ax, data, sample_interval_s=1.0):
                 color=color, linewidth=0, alpha=0.8, zorder=6, label="_")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--save", default=None, help="Output filename (PNG/PDF)")
@@ -204,7 +179,6 @@ def main():
 
     env = sim_args.ENV_FACTORY()
 
-    # Load all three datasets
     all_data = []
     for rel_path, _ in PANELS:
         abs_path = os.path.join(PROJECT_ROOT, rel_path)
@@ -212,7 +186,6 @@ def main():
 
     xmin, xmax, ymin, ymax = compute_shared_bounds(all_data, env)
 
-    # Figure: 1 row × 3 columns, square panels
     panel_w = 5.0
     fig, axes = plt.subplots(1, 3, figsize=(panel_w * 3 + 0.5, panel_w + 0.8))
     fig.patch.set_facecolor("white")
@@ -231,14 +204,11 @@ def main():
         draw_trajectories(ax, data)
         draw_endpoints(ax, data)
 
-    # Only show y-axis label on the leftmost panel
     axes[0].set_ylabel("y (m)", fontsize=9)
     for ax in axes[1:]:
         ax.tick_params(labelleft=False)
 
-    # Shared legend below the figure, drawn from the last axis
     handles, labels = axes[-1].get_legend_handles_labels()
-    # Also grab the obstacle patch manually for the legend
     obs_patch = mpatches.Patch(facecolor=(80/255, 80/255, 80/255),
                                edgecolor=(40/255, 40/255, 40/255), label="Obstacle")
     handles = [obs_patch] + handles

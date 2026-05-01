@@ -1,6 +1,3 @@
-# evaluation/compare_metrics.py
-# Produces a 1x4 metric comparison figure overlaying three predictors on each plot.
-#
 # Usage:
 #   python evaluation/compare_metrics.py
 #   python evaluation/compare_metrics.py --save comparison_metrics.png
@@ -19,23 +16,16 @@ sys.path.insert(0, project_root)
 
 import args as sim_args
 
-# ---------------------------------------------------------------------------
-# Datasets
-# ---------------------------------------------------------------------------
-
 PANELS = [
     ("results/mpc_constvel.csv", "Const-Vel"),
     ("results/mpc_velacc.csv",   "Vel+Acc"),
     ("results/mpc_att.csv",      "Att. Field"),
 ]
 
-COLORS = ["#2563EB", "#EA580C", "#16A34A"]   # blue, orange, green
+COLORS = ["#2563EB", "#EA580C", "#16A34A"]
 
 GRAY = "#6B7280"
 
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
 
 def load_log(csv_path):
     with open(csv_path, newline="") as f:
@@ -65,10 +55,6 @@ def accel_magnitude(ax_col, ay_col):
             for ax, ay in zip(ax_col, ay_col)]
 
 
-# ---------------------------------------------------------------------------
-# Axis styling
-# ---------------------------------------------------------------------------
-
 def _style_ax(ax, title, xlabel, ylabel):
     ax.set_title(title, fontsize=10, fontweight="bold", pad=6)
     ax.set_xlabel(xlabel, fontsize=8)
@@ -77,10 +63,6 @@ def _style_ax(ax, title, xlabel, ylabel):
     ax.grid(True, linewidth=0.4, alpha=0.5)
     ax.spines[["top", "right"]].set_visible(False)
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser()
@@ -105,20 +87,16 @@ def main():
         comp = [x * 1000 for x in data["ctrl_compute_s"]]
         mags = accel_magnitude(data["drone_ax"], data["drone_ay"])
 
-        # -- Visibility --
         ax_vis.fill_between(t, vis, alpha=0.08, color=color)
         ax_vis.plot(t, vis, color=color, linewidth=0.9, label=label)
 
-        # -- Computation time --
         ax_comp.plot(t, comp, color=color, linewidth=0.7, alpha=0.85, label=label)
 
-        # -- Tracking error (line instead of bars so three series stay legible) --
+        # Use line instead of bars so three series remain legible when overlaid
         ax_terr.plot(t, terr, color=color, linewidth=0.8, alpha=0.85, label=label)
 
-        # -- Acceleration magnitude --
         ax_acc.plot(t, mags, color=color, linewidth=0.9, alpha=0.85, label=label)
 
-    # Zero-reference lines
     ax_vis.axhline(0,  color=GRAY, linewidth=0.5, linestyle="--")
     ax_terr.axhline(0, color=GRAY, linewidth=0.7, linestyle="--")
     ax_acc.axhline(0,  color=GRAY, linewidth=0.5, linestyle="--")
@@ -128,7 +106,6 @@ def main():
     _style_ax(ax_terr, "Tracking Error Score",       "Time (s)", "Score")
     _style_ax(ax_acc,  "Drone Acceleration |a|",     "Time (s)", "Acceleration (m/s²)")
 
-    # Shared legend below the figure
     handles, labels = ax_vis.get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=len(PANELS),
                fontsize=9, frameon=True, bbox_to_anchor=(0.5, 0.01))

@@ -1,6 +1,3 @@
-# controllers/scripted_evader.py
-# Pre-planned trajectory for the evader: approach → clockwise orbit → straight line → decelerate to stop.
-
 import numpy as np
 
 class ScriptedTrajectory_2:
@@ -16,7 +13,6 @@ class ScriptedTrajectory_2:
     4. Decelerate - slow to a stop at the destination.
     """
 
-    # How close (metres) the evader must be before it advances to the next waypoint.
     _REACH_THRESHOLD = 0.25
 
     def __init__(
@@ -27,7 +23,7 @@ class ScriptedTrajectory_2:
         orbit_speed: float = 2.68,    # m/s while looping
         travel_speed: float = 2.68,   # m/s on the straight-line leg
         stop_point: tuple = (-8.0, -4.0),
-        orbit_points: int = 72,      # resolution of the circular arc (one per 5 deg)
+        orbit_points: int = 72,       # resolution of the circular arc (one per 5 deg)
     ):
         self._cx = obstacle_cx
         self._cy = obstacle_cy
@@ -40,18 +36,13 @@ class ScriptedTrajectory_2:
         self._waypoints = self._build_waypoints()
         self._idx = 0
 
-    # ------------------------------------------------------------------
-    # Waypoint construction
-    # ------------------------------------------------------------------
-
     def _build_waypoints(self):
         """Returns list of (x, y, speed) tuples describing the full path."""
         wps = []
-        speed = self._travel_speed  # 2.68 m/s constant
-        n_line = 30   # waypoints per straight segment
-        n_arc = 18    # waypoints per quarter circle arc
+        speed = self._travel_speed
+        n_line = 30
+        n_arc = 18
 
-        # Start at (0, 3)
         current = (0.0, 3.0)
 
         # Segment 1: Straight from (0, 3) to (0, 7)
@@ -121,10 +112,6 @@ class ScriptedTrajectory_2:
 
         return wps
 
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
-
     @property
     def done(self) -> bool:
         return self._idx >= len(self._waypoints)
@@ -143,7 +130,6 @@ class ScriptedTrajectory_2:
         dy = wy - state[1]
         dist = np.hypot(dx, dy)
 
-        # Advance waypoint when close enough
         if dist < self._REACH_THRESHOLD:
             self._idx += 1
             if self.done:

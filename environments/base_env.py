@@ -1,4 +1,3 @@
-# environments/base_env.py
 import math
 from dataclasses import dataclass, field
 from typing import List, Union
@@ -28,7 +27,6 @@ class BaseEnvironment:
     obstacles: List[Obstacle] = field(default_factory=list)
 
     def check_collision(self, x, y, agent_radius=0.5) -> bool:
-        """Returns True if the agent overlaps any obstacle."""
         for obs in self.obstacles:
             if isinstance(obs, EllipseObstacle):
                 if _point_in_ellipse(x, y, obs, margin=agent_radius):
@@ -39,7 +37,6 @@ class BaseEnvironment:
         return False
 
     def has_line_of_sight(self, x1, y1, x2, y2) -> bool:
-        """Returns True if the segment (x1,y1)-(x2,y2) does not pass through any obstacle."""
         for obs in self.obstacles:
             if isinstance(obs, EllipseObstacle):
                 if _segment_intersects_ellipse(x1, y1, x2, y2, obs):

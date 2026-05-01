@@ -1,4 +1,3 @@
-# controllers/basic_mpc.py
 import numpy as np
 from scipy.optimize import minimize
 from predictors.constvel_predictor import ConstVelPredictor
@@ -57,7 +56,6 @@ class BasicMPC:
         self._u_prev = np.zeros(self._n_vars)
         self._bounds = [(-a_max, a_max)] * self._n_vars
 
-        # Rollout cache — invalidated at the start of each _solve_mpc call
         self._last_u_hash = None
         self._last_states = None
 
@@ -65,23 +63,11 @@ class BasicMPC:
 
         self._g = 9.81
 
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
-
     def __call__(self, drone_state, evader_state):
-        """
-        Same signature as basic_chase_controller.
-
-        drone_state  : [x, y, psi, x_dot, y_dot, psi_dot]
-        evader_state : [x, y]
-        returns      : np.array([theta, phi, tau_z])
-        """
         x, y, psi, vx, vy, psi_dot = drone_state
         drone_xy_vel = np.array([x, y, vx, vy])
         evader_xy = np.asarray(evader_state[:2], dtype=float)
 
-        # Predict evader trajectory over the MPC horizon
         evader_traj = self._predictor.predict(evader_xy, self.dt, self.N)
         self.last_evader_traj = evader_traj
 
@@ -98,17 +84,7 @@ class BasicMPC:
 
         return np.array([theta, phi, tau_z])
 
-    # ------------------------------------------------------------------
-    # MPC internals
-    # ------------------------------------------------------------------
-
     def _rollout(self, u_flat, drone_xy_vel):
-        """
-        Forward-Euler rollout of the simplified planar model.
-
-        State: [x, y, vx, vy]
-        Returns list of N+1 states (each a length-4 numpy array).
-        """
         dt = self.dt
         states = np.empty((self.N + 1, 4))
         states[0] = drone_xy_vel
@@ -123,7 +99,6 @@ class BasicMPC:
         return states
 
     def _get_states(self, u_flat, drone_xy_vel):
-        """Cached rollout — reuses the last result when u_flat is unchanged."""
         key = u_flat.tobytes()
         if key != self._last_u_hash:
             self._last_states = self._rollout(u_flat, drone_xy_vel)
@@ -141,29 +116,19 @@ class BasicMPC:
         Using one vector function instead of many scalar functions means scipy
         only needs n+1 rollouts per gradient step (vs m*(n+1) for m scalars).
 
-        evader_traj : (N+1, 2) predicted evader positions from ConstVelPredictor.
-                      evader_traj[k] is matched against drone state at step k.
-
-        Per-step (k=1..N):
-          - Lower bound:  dist_k - d_min >= 0  (don't crowd the evader)
-          - Obstacle clearance per obstacle
-        Terminal step only (k=N):
-          - Upper bound:  d_max - dist_N >= 0  (must be in range by end of horizon)
-
-        Applying the upper bound only at the terminal step keeps the problem
-        feasible when the evader has moved outside the current range — the
-        optimizer has the full horizon to close the gap.
+        The upper bound on distance is applied only at the terminal step, not
+        every step. This keeps the problem feasible when the evader has moved
+        outside range — the optimizer has the full horizon to close the gap.
         """
         states = self._get_states(u_flat, drone_xy_vel)
         n_obs = len(self.env.obstacles)
-        # per-step: 1 lower-bound + n_obs obstacle constraints; plus 1 terminal upper-bound
         cons = np.empty(self.N * (1 + n_obs) + 1)
         idx = 0
         for k in range(1, self.N + 1):
             xk, yk = states[k, 0], states[k, 1]
             ex, ey = evader_traj[k]
             dist = np.hypot(xk - ex, yk - ey)
-            cons[idx] = dist - self.d_min          # lower bound at every step
+            cons[idx] = dist - self.d_min
             idx += 1
             for obs in self.env.obstacles:
                 if hasattr(obs, 'rx'):
@@ -183,8 +148,7 @@ class BasicMPC:
         return cons
 
     def _solve_mpc(self, drone_xy_vel, evader_traj):
-        """Run SLSQP and return (u_opt, success)."""
-        self._last_u_hash = None  # invalidate rollout cache for this timestep
+        self._last_u_hash = None
 
         constraint = {
             'type': 'ineq',
@@ -203,33 +167,19 @@ class BasicMPC:
         return result.x, result.success
 
     def _shift_warm_start(self, u_opt):
-        """Shift the solution left by one step to warm-start the next call."""
         u_shifted = np.empty_like(u_opt)
         u_shifted[:-2] = u_opt[2:]
-        u_shifted[-2:] = u_opt[-2:]   # hold last input
+        u_shifted[-2:] = u_opt[-2:]
         self._u_prev = u_shifted
 
-    # ------------------------------------------------------------------
-    # Fallback
-    # ------------------------------------------------------------------
-
     def _fallback(self, drone_xy_vel, evader_xy, bad_u):
-        """
-        Three-level fallback when the optimizer fails.
-
-        Level 1: use optimizer's best-effort result if finite.
-        Level 2: proportional pull toward d_mid.
-        Level 3: zero acceleration (hover).
-        """
         self._fallback_count += 1
         if self._fallback_count % 50 == 1:
             print(f"[BasicMPC] Fallback #{self._fallback_count}")
 
-        # Level 1
         if np.isfinite(bad_u).all():
             return bad_u[0], bad_u[1]
 
-        # Level 2
         x, y = drone_xy_vel[0], drone_xy_vel[1]
         ex, ey = evader_xy
         dx, dy = ex - x, ey - y
@@ -241,18 +191,9 @@ class BasicMPC:
             ay = np.clip(kp_fb * scale * dy, -self.a_max, self.a_max)
             return ax, ay
 
-        # Level 3
         return 0.0, 0.0
 
-    # ------------------------------------------------------------------
-    # Helpers (inverse kinematics + yaw PD)
-    # ------------------------------------------------------------------
-
     def _virtual_to_angles(self, ax, ay, psi):
-        """
-        Convert world-frame accelerations to body pitch/roll angles.
-        Mirrors the inverse-kinematics block in basic_tracker.py.
-        """
         c, s = np.cos(psi), np.sin(psi)
         tan_theta = (c * ax + s * ay) / self._g
         tan_phi   = (-s * ax + c * ay) / self._g
@@ -261,10 +202,6 @@ class BasicMPC:
         return theta, phi
 
     def _yaw_control(self, drone_state, evader_xy):
-        """
-        PD yaw controller to face the evader.
-        Mirrors the yaw block in basic_tracker.py.
-        """
         x, y, psi, _, _, psi_dot = drone_state
         dx = evader_xy[0] - x
         dy = evader_xy[1] - y

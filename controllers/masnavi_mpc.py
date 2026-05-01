@@ -31,8 +31,8 @@ class MasnaviMPC:
         self,
         env,
         sim_dt=0.01,
-        t_fin=2.0,      # prediction horizon time 
-        num=20,        # discretization of the horizon (number of samples)
+        t_fin=2.0,
+        num=20,
         num_samples=20,
         nvar=11,
         d_fov_min=5.0,
@@ -61,7 +61,7 @@ class MasnaviMPC:
         self.d_fov_max = d_fov_max
         self.v_max = v_max
         self.a_max = a_max
-        
+
         self.weight_smoothness = weight_smoothness
         self.rho_fov = rho_fov
         self.rho_occ = rho_occ
@@ -84,7 +84,6 @@ class MasnaviMPC:
         self._c_x_prev = np.zeros(nvar)
         self._c_y_prev = np.zeros(nvar)
 
-        # Precompute Basis Matrices
         self._P, self._P_dot, self._P_ddot = self._build_bernstein_basis()
 
         self._H_smooth = weight_smoothness * (self._P_ddot.T @ self._P_ddot)
@@ -93,26 +92,21 @@ class MasnaviMPC:
         self._PddotTPddot = self._P_ddot.T @ self._P_ddot
 
         self._A_eq = np.vstack([
-            self._P[0, :],        
-            self._P_dot[0, :],    
+            self._P[0, :],
+            self._P_dot[0, :],
         ])
 
-        # --- Performance Optimizations: Pre-allocation & Vectorization Vectors ---
-        
-        # Precompute sampling vectors
         self._u_vals = np.linspace(0.0, 1.0, self.num_samples)
         self._one_minus_u = 1.0 - self._u_vals
         self._sum_1_minus_u_sq = np.sum(self._one_minus_u**2)
-        
-        # Reshape for broadcasting rules (num_samples x 1)
+
         self._u_col = self._u_vals[:, None]
         self._one_minus_u_col = self._one_minus_u[:, None]
 
-        # Pre-allocate static components of the KKT System Matrix
         nv = self.nvar
-        A_eq_joint = block_diag(self._A_eq, self._A_eq)               
+        A_eq_joint = block_diag(self._A_eq, self._A_eq)
         num_eq = A_eq_joint.shape[0]
-        
+
         self._KKT = np.zeros((2 * nv + num_eq, 2 * nv + num_eq))
         self._KKT[2*nv:, :2*nv] = A_eq_joint
         self._KKT[:2*nv, 2*nv:] = A_eq_joint.T
@@ -146,7 +140,7 @@ class MasnaviMPC:
         return np.array([theta, phi, tau_z])
 
     def _build_bernstein_basis(self):
-        n = self.nvar - 1           # 
+        n = self.nvar - 1
         num = self.num
         t = np.linspace(0.0, 1.0, num)
 
@@ -199,7 +193,6 @@ class MasnaviMPC:
 
         n_obs = len(self.env.obstacles)
 
-        # Pre-allocate broadcasting arrays
         evader_x_exp = evader_traj[:, 0][None, :]
         evader_y_exp = evader_traj[:, 1][None, :]
 
@@ -207,7 +200,7 @@ class MasnaviMPC:
             x_drone = self._P @ c_x
             y_drone = self._P @ c_y
 
-            # STEP 1: Update xi_2 (alpha) and xi_3 (d) 
+            # STEP 1: Update xi_2 (alpha) and xi_3 (d)
             dx = x_drone - evader_traj[:, 0]
             dy = y_drone - evader_traj[:, 1]
             alpha_r = np.arctan2(dy, dx)
@@ -217,33 +210,29 @@ class MasnaviMPC:
             alpha_o = np.zeros((n_obs, self.num_samples, self.num))
             d_o = np.zeros((n_obs, self.num_samples, self.num))
 
-            # Expand drone trajectory for broadcasting
             x_drone_exp = x_drone[None, :]
             y_drone_exp = y_drone[None, :]
 
-            # Vectorized sample dimension (shape: num_samples x num)
             x_tilde = self._one_minus_u_col * x_drone_exp + self._u_col * evader_x_exp
             y_tilde = self._one_minus_u_col * y_drone_exp + self._u_col * evader_y_exp
 
             for oi, obs in enumerate(self.env.obstacles):
                 rx_ell, ry_ell, th_ell = self._obs_axes(obs)
                 ct, st = np.cos(th_ell), np.sin(th_ell)
-                
+
                 dx_o = x_tilde - obs.cx
                 dy_o = y_tilde - obs.cy
 
-                # Transform to local normalized frame
                 lx = ( ct * dx_o + st * dy_o) / rx_ell
                 ly = (-st * dx_o + ct * dy_o) / ry_ell
 
                 dist_n = np.hypot(lx, ly)
 
-                # Fallback to evader direction when near-zero
+                # Fall back to evader direction when the interpolated point is near the obstacle center
                 evader_lx = ( ct * (evader_traj[:, 0] - obs.cx) + st * (evader_traj[:, 1] - obs.cy)) / rx_ell
                 evader_ly = (-st * (evader_traj[:, 0] - obs.cx) + ct * (evader_traj[:, 1] - obs.cy)) / ry_ell
-                a_n_evader = np.arctan2(evader_ly, evader_lx) # Shape: (num,)
-                
-                # Apply fallback across all samples using NumPy broadcasting
+                a_n_evader = np.arctan2(evader_ly, evader_lx)
+
                 a_n = np.where(dist_n > 1e-6, np.arctan2(ly, lx), a_n_evader[None, :])
 
                 alpha_o[oi, :, :] = a_n
@@ -261,7 +250,7 @@ class MasnaviMPC:
                 s_ax, s_ay, evader_x_exp, evader_y_exp
             )
             c_x_new, c_y_new, ok = self._solve_kkt(H_joint, g_joint, b_eq_x, b_eq_y)
-            
+
             if not ok:
                 return self._c_x_prev.copy(), self._c_y_prev.copy(), False
 
@@ -276,19 +265,18 @@ class MasnaviMPC:
 
             occ_viol_max = 0.0
 
-            # Re-expand updated drone state for residual checks
             x_drone_exp = (self._P @ c_x)[None, :]
             y_drone_exp = (self._P @ c_y)[None, :]
             x_tilde = self._one_minus_u_col * x_drone_exp + self._u_col * evader_x_exp
             y_tilde = self._one_minus_u_col * y_drone_exp + self._u_col * evader_y_exp
-            
+
             x_drone_scaled = self._one_minus_u_col * x_drone_exp
             y_drone_scaled = self._one_minus_u_col * y_drone_exp
 
             for oi, obs in enumerate(self.env.obstacles):
                 rx_ell, ry_ell, th_ell = self._obs_axes(obs)
                 ct, st = np.cos(th_ell), np.sin(th_ell)
-                
+
                 cos_a = np.cos(alpha_o[oi])
                 sin_a = np.sin(alpha_o[oi])
                 d = d_o[oi]
@@ -302,14 +290,12 @@ class MasnaviMPC:
                 res_occ_x = x_drone_scaled - b_occ_x
                 res_occ_y = y_drone_scaled - b_occ_y
 
-                # Weighting residuals by (1 - u) and summing over samples 
                 weighted_res_occ_x = self._one_minus_u_col * res_occ_x
                 weighted_res_occ_y = self._one_minus_u_col * res_occ_y
-                
+
                 grad_lambda_x += rho_occ * (self._P.T @ np.sum(weighted_res_occ_x, axis=0))
                 grad_lambda_y += rho_occ * (self._P.T @ np.sum(weighted_res_occ_y, axis=0))
 
-                # Violation calculation
                 xs_l =  ct * (x_tilde - obs.cx) + st * (y_tilde - obs.cy)
                 ys_l = -st * (x_tilde - obs.cx) + ct * (y_tilde - obs.cy)
                 ell_val = np.sqrt((xs_l / rx_ell) ** 2 + (ys_l / ry_ell) ** 2)
@@ -322,7 +308,7 @@ class MasnaviMPC:
             fov_res = float(np.max(np.hypot(res_tar_x, res_tar_y)))
             if fov_res < self.res_tol and occ_viol_max < self.res_tol:
                 break
-                
+
             rho_fov  *= self.rho_scale
             rho_occ  *= self.rho_scale
             rho_ineq *= self.rho_scale
@@ -345,7 +331,6 @@ class MasnaviMPC:
         g_joint[:nv] = -lambda_x
         g_joint[nv:] = -lambda_y
 
-        # FOV tracking term
         b_tar_x = evader_traj[:, 0] + d_r * np.cos(alpha_r)
         b_tar_y = evader_traj[:, 1] + d_r * np.sin(alpha_r)
 
@@ -355,8 +340,7 @@ class MasnaviMPC:
         g_joint[:nv] -= rho_fov * self._P.T @ b_tar_x
         g_joint[nv:] -= rho_fov * self._P.T @ b_tar_y
 
-        # Acceleration bound term
-        H_ineq_acc  = rho_ineq * self._PddotTPddot
+        H_ineq_acc = rho_ineq * self._PddotTPddot
 
         H_joint[:nv, :nv] += H_ineq_acc
         H_joint[nv:, nv:] += H_ineq_acc
@@ -364,7 +348,6 @@ class MasnaviMPC:
         g_joint[:nv] -= rho_ineq * self._P_ddot.T @ s_ax
         g_joint[nv:] -= rho_ineq * self._P_ddot.T @ s_ay
 
-        # Occlusion avoidance terms (Precomputed Hessian & Vectorized Gradient)
         if len(self.env.obstacles) > 0:
             H_occ_total = (rho_occ * len(self.env.obstacles) * self._sum_1_minus_u_sq) * self._PtP
             H_joint[:nv, :nv] += H_occ_total
@@ -373,7 +356,7 @@ class MasnaviMPC:
         for oi, obs in enumerate(self.env.obstacles):
             rx_ell, ry_ell, th_ell = self._obs_axes(obs)
             ct, st = np.cos(th_ell), np.sin(th_ell)
-            
+
             cos_a = np.cos(alpha_o[oi])
             sin_a = np.sin(alpha_o[oi])
             d = d_o[oi]
@@ -384,7 +367,6 @@ class MasnaviMPC:
             b_occ_x = obs.cx - self._u_col * evader_x_exp + ux * d
             b_occ_y = obs.cy - self._u_col * evader_y_exp + uy * d
 
-            # Vectorized gradient calculation
             weighted_b_occ_x = self._one_minus_u_col * b_occ_x
             weighted_b_occ_y = self._one_minus_u_col * b_occ_y
 
@@ -395,17 +377,15 @@ class MasnaviMPC:
 
     def _solve_kkt(self, H_joint, g_joint, b_eq_x, b_eq_y):
         nv = self.nvar
-        
+
         # Ridge regularization to guarantee matrix invertibility
         H_joint += np.eye(2 * nv) * 1e-4
 
-        # Drop the new H_joint into the top-left of the pre-allocated matrix
         self._KKT[:2*nv, :2*nv] = H_joint
-        
-        # Build RHS
-        b_eq_joint = np.concatenate([b_eq_x, b_eq_y])                 
+
+        b_eq_joint = np.concatenate([b_eq_x, b_eq_y])
         rhs = np.concatenate([-g_joint, b_eq_joint])
-        
+
         try:
             solution = np.linalg.solve(self._KKT, rhs)
             z = solution[:2*nv]
@@ -428,17 +408,17 @@ class MasnaviMPC:
         x, y, vx, vy = drone_xy_vel
         dx, dy = evader_xy[0] - x, evader_xy[1] - y
         dist = np.hypot(dx, dy)
-        
+
         if dist > 1e-6:
             d_mid = (self.d_fov_min + self.d_fov_max) / 2.0
             scale = (dist - d_mid) / dist
-            
+
             kp_fb = 3.0
-            kd_fb = 2.0 
-            
+            kd_fb = 2.0
+
             ax = kp_fb * scale * dx - kd_fb * vx
             ay = kp_fb * scale * dy - kd_fb * vy
-            
+
             ax = np.clip(ax, -self.a_max, self.a_max)
             ay = np.clip(ay, -self.a_max, self.a_max)
             return float(ax), float(ay)

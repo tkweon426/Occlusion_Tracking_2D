@@ -1,4 +1,3 @@
-# predictors/attfield_predictor.py
 import numpy as np
 
 
@@ -39,10 +38,6 @@ class AttFieldPredictor:
         self._prev_pos = None
         self._vel = np.zeros(2)
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     def predict(self, pos_xy, horizon_dt, N):
         """
         Update the velocity estimate and return a predicted trajectory.
@@ -61,13 +56,11 @@ class AttFieldPredictor:
         """
         pos = np.asarray(pos_xy, dtype=float)
 
-        # --- Velocity estimation (EMA finite difference) ---
         if self._prev_pos is not None:
             vel_raw = (pos - self._prev_pos) / self._sim_dt
             self._vel = self._alpha * vel_raw + (1.0 - self._alpha) * self._vel
         self._prev_pos = pos.copy()
 
-        # --- Iterative rollout with attractive field ---
         # v_att accumulates attraction like gravity: each step adds acceleration
         # to the running velocity so the curve bends progressively, not abruptly.
         traj = np.empty((N + 1, 2))
@@ -84,10 +77,6 @@ class AttFieldPredictor:
             traj[k + 1] = p
 
         return traj
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
 
     def _directional_radii(self, u, obs):
         """
@@ -121,7 +110,7 @@ class AttFieldPredictor:
         if d <= r_min:
             return np.zeros(2)
         surface_d = max(d - r_surf, 1e-3)
-        a_mag = min(self._k_att / surface_d ** 2, 6.87)# instead of self._k_att * 10
+        a_mag = min(self._k_att / surface_d ** 2, 6.87)
         return a_mag * u
 
     def _clamp_to_surface(self, p, obs):

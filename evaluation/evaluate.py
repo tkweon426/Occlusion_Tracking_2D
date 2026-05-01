@@ -1,6 +1,3 @@
-# evaluation/evaluate.py
-# Interactive post-run evaluator for occlusion tracking simulation logs.
-#
 # Usage:
 #   python evaluation/evaluate.py results/log_20260422_204007.csv
 #   python evaluation/evaluate.py results/log.csv --env circle
@@ -18,7 +15,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.widgets import Button, CheckButtons
 
-# Allow imports from the project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import args as sim_args
@@ -34,10 +30,6 @@ ENV_CHOICES = {
     "two_obs": make_two_obs_env,
 }
 
-
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
 
 def load_log(csv_path):
     with open(csv_path, newline="") as f:
@@ -73,7 +65,6 @@ def load_log(csv_path):
         "mpc_dt":                col("mpc_dt", float, None),
     }
 
-    # Parse the full evader prediction horizon (JSON-encoded list of [x, y] pairs)
     data["pred_horizon_full"] = []
     for r in rows:
         raw = r.get("pred_horizon_full", "")
@@ -87,10 +78,6 @@ def load_log(csv_path):
 
     return data
 
-
-# ---------------------------------------------------------------------------
-# Axis bounds helpers
-# ---------------------------------------------------------------------------
 
 def _compute_bounds(data, env, padding=3.0):
     all_x = data["drone_x"] + data["evader_x"]
@@ -129,10 +116,6 @@ def _compute_bounds(data, env, padding=3.0):
 
     return xmin - padding, xmax + padding, ymin - padding, ymax + padding
 
-
-# ---------------------------------------------------------------------------
-# Drawing helpers
-# ---------------------------------------------------------------------------
 
 def draw_grid(ax, xmin, xmax, ymin, ymax, spacing=10.0):
     artists = []
@@ -285,7 +268,6 @@ def draw_full_horizon_intervals(ax, data, sim_dt=0.01, sample_interval_s=1.0):
     if not any(t is not None for t in trajs):
         return []
 
-    # Pick which simulation timesteps to draw, sampled at sample_interval_s
     sampled_indices = []
     next_sample = 0.0
     for i, t in enumerate(sim_times):
@@ -295,7 +277,6 @@ def draw_full_horizon_intervals(ax, data, sim_dt=0.01, sample_interval_s=1.0):
             sampled_indices.append(i)
             next_sample += sample_interval_s
 
-    # Use a colormap to colour arms chronologically (early=cool, late=warm)
     cmap = plt.cm.plasma
     n_arms = len(sampled_indices)
 
@@ -310,17 +291,12 @@ def draw_full_horizon_intervals(ax, data, sim_dt=0.01, sample_interval_s=1.0):
         sim_t = sim_times[i]
         ln, = ax.plot(xs, ys, color=color, linewidth=1.0, alpha=0.6,
                       zorder=5, label=f"Horizon t={sim_t:.1f}s" if arm_idx == 0 else "_")
-        # dot at the tip of the horizon
         tip, = ax.plot(xs[-1], ys[-1], marker="x", markersize=5,
                        color=color, linewidth=0, alpha=0.8, zorder=6,
                        label="_")
         artists.extend([ln, tip])
     return artists
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate a simulation log file.")
@@ -333,7 +309,6 @@ def main():
     )
     cli = parser.parse_args()
 
-    # Resolve working directory to the project root so relative paths work
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     log_path = cli.log if os.path.isabs(cli.log) else os.path.join(project_root, cli.log)
 
@@ -349,9 +324,6 @@ def main():
     has_horizon_full  = any(v is not None for v in data["pred_horizon_full"])
     mpc_dt_val        = next((v for v in data["mpc_dt"] if v is not None), 0.1)
 
-    # ------------------------------------------------------------------
-    # Figure layout
-    # ------------------------------------------------------------------
     fig = plt.figure(figsize=(14, 9))
     fig.patch.set_facecolor("white")
 
@@ -371,9 +343,6 @@ def main():
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
 
-    # ------------------------------------------------------------------
-    # Draw all elements and collect artist groups
-    # ------------------------------------------------------------------
     grid_artists    = draw_grid(ax, xmin, xmax, ymin, ymax)
     obs_artists     = draw_obstacles(ax, env)
     drone_traj      = draw_drone_trajectory(ax, data)
@@ -386,11 +355,9 @@ def main():
     pred_artists    = draw_predicted_evader(ax, data)
     horizon_artists = draw_predicted_horizon(ax, data)
     full_hor_artists = draw_full_horizon_intervals(ax, data, sim_dt=dt)
-    # hide full horizon by default until the user toggles it on
     for a in full_hor_artists:
         a.set_visible(False)
 
-    # Map toggle label → list of artists
     element_artists = {
         "Env (obstacles)":           obs_artists,
         "Drone start":               drone_start,
@@ -405,9 +372,6 @@ def main():
         "Full horizon (1 s steps)":  full_hor_artists,
     }
 
-    # ------------------------------------------------------------------
-    # Toggle panel (CheckButtons)
-    # ------------------------------------------------------------------
     labels = list(element_artists.keys())
     actives = [bool(v) for v in [
         obs_artists, drone_start, evader_start, drone_end, evader_end,
@@ -419,7 +383,6 @@ def main():
     ax_check.set_title("Toggle layers", fontsize=10, pad=4)
     check = CheckButtons(ax_check, labels, actives)
 
-    # Tighten up checkbox label font size
     for txt in check.labels:
         txt.set_fontsize(9)
 
@@ -430,9 +393,6 @@ def main():
 
     check.on_clicked(on_toggle)
 
-    # ------------------------------------------------------------------
-    # Screenshot button
-    # ------------------------------------------------------------------
     ax_btn = fig.add_axes([0.76, 0.12, 0.22, 0.08])
     btn = Button(ax_btn, "Save screenshot", color="0.85", hovercolor="0.70")
     btn.label.set_fontsize(9)
@@ -449,9 +409,6 @@ def main():
 
     btn.on_clicked(on_screenshot)
 
-    # ------------------------------------------------------------------
-    # Info text (bottom of right panel)
-    # ------------------------------------------------------------------
     info_lines = [
         f"Steps: {n_steps}",
         f"Duration: {total_time:.2f} s",

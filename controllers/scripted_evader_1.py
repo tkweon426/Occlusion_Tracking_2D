@@ -1,6 +1,3 @@
-# controllers/scripted_evader.py
-# Pre-planned trajectory for the evader: approach → clockwise orbit → straight line → decelerate to stop.
-
 import numpy as np
 
 class ScriptedTrajectory:
@@ -16,7 +13,6 @@ class ScriptedTrajectory:
     4. Decelerate - slow to a stop at the destination.
     """
 
-    # How close (metres) the evader must be before it advances to the next waypoint.
     _REACH_THRESHOLD = 0.25
 
     def __init__(
@@ -40,24 +36,18 @@ class ScriptedTrajectory:
         self._waypoints = self._build_waypoints()
         self._idx = 0
 
-    # ------------------------------------------------------------------
-    # Waypoint construction
-    # ------------------------------------------------------------------
-
     def _build_waypoints(self):
         """Returns list of (x, y, speed) tuples describing the full path."""
         wps = []
 
-        # --- Phase 1: approach to orbit entry at (0, 7) ---
         # (0, 7) is the leftmost point of the orbit: cx=3, r=3, angle=π
-        entry_angle = np.pi          # angle = 180° → point to the left of the obstacle
+        entry_angle = np.pi
         entry = (
             self._cx + self._r * np.cos(entry_angle),
             self._cy + self._r * np.sin(entry_angle),
         )
         wps.append((*entry, self._orbit_speed))
 
-        # --- Phase 2: full clockwise loop ---
         # θ goes from π down to π - 2π (clockwise in standard math coords)
         for i in range(1, self._n + 1):
             theta = entry_angle - 2 * np.pi * i / self._n
@@ -65,7 +55,6 @@ class ScriptedTrajectory:
             wy = self._cy + self._r * np.sin(theta)
             wps.append((wx, wy, self._orbit_speed))
 
-        # --- Phase 3 + 4: straight line with progressive deceleration ---
         ex, ey = entry
         sx, sy = self._stop
         n_decel = 8
@@ -73,15 +62,10 @@ class ScriptedTrajectory:
             t = i / n_decel
             wx = ex + t * (sx - ex)
             wy = ey + t * (sy - ey)
-            # Linear speed ramp: full travel_speed → 0
             spd = self._travel_speed * (1.0 - t)
             wps.append((wx, wy, max(spd, 0.0)))
 
         return wps
-
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
 
     @property
     def done(self) -> bool:
@@ -101,7 +85,6 @@ class ScriptedTrajectory:
         dy = wy - state[1]
         dist = np.hypot(dx, dy)
 
-        # Advance waypoint when close enough
         if dist < self._REACH_THRESHOLD:
             self._idx += 1
             if self.done:

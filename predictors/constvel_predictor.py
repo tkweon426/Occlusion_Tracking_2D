@@ -1,4 +1,3 @@
-# predictors/constvel_predictor.py
 import numpy as np
 
 
@@ -42,13 +41,11 @@ class ConstVelPredictor:
         """
         pos = np.asarray(pos_xy, dtype=float)
 
-        # Update smoothed velocity estimate via finite difference
         if self._prev_pos is not None:
             vel_raw = (pos - self._prev_pos) / self._sim_dt
             self._vel = self._alpha * vel_raw + (1.0 - self._alpha) * self._vel
         self._prev_pos = pos.copy()
 
-        # Constant-velocity rollout: traj[k] = pos + k * horizon_dt * vel
-        steps = np.arange(N + 1, dtype=float)          # shape (N+1,)
-        traj = pos + steps[:, None] * horizon_dt * self._vel   # shape (N+1, 2)
+        steps = np.arange(N + 1, dtype=float)
+        traj = pos + steps[:, None] * horizon_dt * self._vel
         return traj

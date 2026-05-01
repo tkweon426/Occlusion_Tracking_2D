@@ -1,4 +1,3 @@
-# predictors/kalman_predictor.py
 import numpy as np
 
 
@@ -26,26 +25,16 @@ class KalmanPredictor:
     def __init__(self, sim_dt, process_noise_std=1.0, meas_noise_std=0.5):
         self._dt = sim_dt
 
-        # Observation model  H : (2, 6) — observe x and y only
+        # Observation model H : (2, 6) — observe x and y only
         self._H = np.array([[1., 0., 0., 0., 0., 0.],
                              [0., 1., 0., 0., 0., 0.]])
 
-        # Measurement noise covariance  R : (2, 2)
         self._R = (meas_noise_std ** 2) * np.eye(2)
-
-        # Process noise std — stored so Q can be rebuilt per dt if needed
         self._q = process_noise_std
-
-        # Build process noise covariance Q for sim_dt
         self._Q = self._build_Q(sim_dt, process_noise_std)
 
-        # State mean and covariance (uninitialised until first observation)
-        self._x = None          # (6,)
-        self._P = None          # (6, 6)
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+        self._x = None  # (6,)
+        self._P = None  # (6, 6)
 
     def predict(self, pos_xy, horizon_dt, N):
         """
@@ -71,7 +60,6 @@ class KalmanPredictor:
         else:
             self._step(z)
 
-        # Roll out N+1 positions from current filtered state using horizon_dt
         F_h = self._build_F(horizon_dt)
         state = self._x.copy()
         traj = np.empty((N + 1, 2))
@@ -79,10 +67,6 @@ class KalmanPredictor:
             traj[k] = state[:2]
             state = F_h @ state
         return traj
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
 
     def _initialise(self, z):
         """Seed the filter from the first observation (zero velocity and acceleration)."""
@@ -94,13 +78,11 @@ class KalmanPredictor:
         """One predict-update cycle of the Kalman filter at sim_dt."""
         F = self._build_F(self._dt)
 
-        # --- Predict ---
         x_pred = F @ self._x
         P_pred = F @ self._P @ F.T + self._Q
 
-        # --- Update ---
-        S = self._H @ P_pred @ self._H.T + self._R          # (2, 2)
-        K = P_pred @ self._H.T @ np.linalg.inv(S)           # (6, 2)
+        S = self._H @ P_pred @ self._H.T + self._R
+        K = P_pred @ self._H.T @ np.linalg.inv(S)
         self._x = x_pred + K @ (z - self._H @ x_pred)
         self._P = (np.eye(6) - K @ self._H) @ P_pred
 
@@ -130,7 +112,6 @@ class KalmanPredictor:
         dt4 = dt3 * dt
         dt5 = dt4 * dt
         q2 = q_std ** 2
-        # Single-axis block (p, v, a) process noise covariance
         block = q2 * np.array([
             [dt5 / 20., dt4 / 8., dt3 / 6.],
             [dt4 / 8.,  dt3 / 3., dt2 / 2.],

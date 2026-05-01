@@ -1,7 +1,3 @@
-#penalty from perpendicular distance to the LOS
-
-#written by Thomas Hyunchang Kweon
-
 import numpy as np
 from scipy.optimize import minimize
 from predictors.constvel_predictor import ConstVelPredictor
@@ -37,7 +33,7 @@ class FastOcclusionMPC:
         self.N = N
         #self._predictor = KalmanPredictor(sim_dt=sim_dt)
         #self._predictor = ConstVelPredictor(sim_dt=sim_dt)
-        self._predictor = AttFieldPredictor(sim_dt=sim_dt, obstacles=self.env.obstacles,k_att=predictor_k_att, d_min=predictor_d_min)
+        self._predictor = AttFieldPredictor(sim_dt=sim_dt, obstacles=self.env.obstacles, k_att=predictor_k_att, d_min=predictor_d_min)
         #self._predictor = VelAccPredictor(sim_dt=sim_dt)
 
         self.d_min = d_min
@@ -45,13 +41,13 @@ class FastOcclusionMPC:
         self.target_distance = target_distance
         self.a_max = a_max
         self.safety_margin = safety_margin
-        
+
         self.w_effort = w_effort
         self.w_distance = w_distance
         self.w_occlusion = w_occlusion
         self.barrier_steepness = barrier_steepness
         self.cull_radius = cull_radius
-        
+
         self.kp_yaw = kp_yaw
         self.kd_yaw = kd_yaw
         self.tau_z_max = tau_z_max
@@ -109,158 +105,152 @@ class FastOcclusionMPC:
         x, y = self._get_states_vectorized(u_flat, drone_xy_vel)
         ex = evader_traj[1:self.N+1, 0]
         ey = evader_traj[1:self.N+1, 1]
-        
+
         dx, dy = x - ex, y - ey
         dists = np.hypot(dx, dy)
-        dists[dists < 1e-6] = 1e-6 
-        
-        # 1. Effort & Distance Cost
+        dists[dists < 1e-6] = 1e-6
+
         effort_cost = self.w_effort * np.dot(u_flat, u_flat)
         dist_cost = self.w_distance * np.sum((dists - self.target_distance)**2)
-        
+
         grad = 2 * self.w_effort * u_flat
         coeff = 2 * self.w_distance * (1.0 - self.target_distance / dists)
         dJ_dx = coeff * dx
         dJ_dy = coeff * dy
 
-        # 2. Line of Sight (h(x)) Barrier Cost
         occ_cost = 0.0
         if self.w_occlusion > 0:
             alpha = self.barrier_steepness
-            
+
             for obs in nearby_obstacles:
-                # Get ellipse params or default to circle
                 if hasattr(obs, 'rx'):
                     rx, ry = obs.rx + self.safety_margin, obs.ry + self.safety_margin
                     theta = obs.theta
                 else:
                     rx, ry = obs.radius + self.safety_margin, obs.radius + self.safety_margin
                     theta = 0.0
-                
+
                 ct, st = np.cos(theta), np.sin(theta)
-                
-                # Transform to obstacle-local space
+
                 dx_D, dy_D = x - obs.cx, y - obs.cy
                 dx_E, dy_E = ex - obs.cx, ey - obs.cy
-                
+
                 uD = (dx_D * ct + dy_D * st) / rx
                 vD = (-dx_D * st + dy_D * ct) / ry
                 uE = (dx_E * ct + dy_E * st) / rx
                 vE = (-dx_E * st + dy_E * ct) / ry
-                
+
                 delU, delV = uE - uD, vE - vD
                 N2 = delU**2 + delV**2 + 1e-6
                 N = np.sqrt(N2)
-                
-                # Distance from origin to the LoS line in warped space
+
+                # Signed area of the parallelogram formed by (drone, origin, evader) in
+                # obstacle-normalized space; d = |S|/N is the perpendicular distance from
+                # the origin to the drone-evader line.
                 S = uD * vE - vD * uE
                 S_abs = np.abs(S)
                 d = S_abs / N
-                
-                # Mask: Only penalize if the obstacle is physically between Drone and Evader
+
+                # Only penalize when the obstacle center lies between drone and evader
                 dot_D = (ex - x)*(obs.cx - x) + (ey - y)*(obs.cy - y)
                 dot_E = (x - ex)*(obs.cx - ex) + (y - ey)*(obs.cy - ey)
                 mask = (dot_D > 0) & (dot_E > 0)
-                
-                # Exponential Barrier function: h(x) = d - 1.0
-                # Cost explodes if d < 1.0 (boundary intersected)
+
+                # Exponential barrier: penalty explodes as d -> 1 (LoS grazes obstacle boundary)
                 P = self.w_occlusion * np.exp(-alpha * (d - 1.0))
                 occ_cost += np.sum(P[mask])
-                
+
                 # ---- Analytic Chain Rule Jacobians ----
-                # Base derivatives wrt x, y
                 duD_dx, dvD_dx = ct / rx, -st / ry
                 duD_dy, dvD_dy = st / rx, ct / ry
-                
+
                 dS_dx = vE * duD_dx - uE * dvD_dx
                 dS_dy = vE * duD_dy - uE * dvD_dy
-                
+
                 dN2_dx = -2 * delU * duD_dx - 2 * delV * dvD_dx
                 dN2_dy = -2 * delU * duD_dy - 2 * delV * dvD_dy
-                
+
                 S_sign = np.sign(S)
-                
-                # Derivative of d
+
                 dd_dx = (S_sign * dS_dx * N2 - S_abs * 0.5 * dN2_dx) / (N2 * N)
                 dd_dy = (S_sign * dS_dy * N2 - S_abs * 0.5 * dN2_dy) / (N2 * N)
-                
-                # Derivative of Penalty
+
                 dP_dx = -alpha * P * dd_dx
                 dP_dy = -alpha * P * dd_dy
-                
+
                 dJ_dx += np.where(mask, dP_dx, 0.0)
                 dJ_dy += np.where(mask, dP_dy, 0.0)
 
         total_cost = effort_cost + dist_cost + occ_cost
-        
+
         # Apply State Jacobian (M^T) to convert positional gradients to control gradients
         grad[0::2] += self.MT @ dJ_dx
         grad[1::2] += self.MT @ dJ_dy
-        
+
         return total_cost, grad
 
     def _constraints_and_jac(self, u_flat, drone_xy_vel, evader_traj, nearby_obstacles):
         x, y = self._get_states_vectorized(u_flat, drone_xy_vel)
         ex = evader_traj[1:self.N+1, 0]
         ey = evader_traj[1:self.N+1, 1]
-        
+
         dx, dy = x - ex, y - ey
         dists = np.hypot(dx, dy)
         dists[dists < 1e-6] = 1e-6
-        
+
         n_obs = len(nearby_obstacles)
         total_cons = self.N + (self.N * n_obs) + 1
-        
+
         C = np.empty(total_cons)
         Jac = np.zeros((total_cons, self._n_vars))
-        
+
         idx = 0
-        
+
         C[idx : idx+self.N] = dists - self.d_min
         dx_over_d = dx / dists
         dy_over_d = dy / dists
         Jac[idx : idx+self.N, 0::2] = dx_over_d[:, None] * self.M
         Jac[idx : idx+self.N, 1::2] = dy_over_d[:, None] * self.M
         idx += self.N
-        
+
         for obs in nearby_obstacles:
             odx, ody = x - obs.cx, y - obs.cy
-            
+
             if hasattr(obs, 'rx'):
                 ct, st = np.cos(obs.theta), np.sin(obs.theta)
                 rx_s = obs.rx + self.safety_margin
                 ry_s = obs.ry + self.safety_margin
-                
+
                 lx = ( ct * odx + st * ody) / rx_s
                 ly = (-st * odx + ct * ody) / ry_s
                 ldists = np.hypot(lx, ly)
                 ldists[ldists < 1e-6] = 1e-6
-                
+
                 C[idx : idx+self.N] = ldists - 1.0
-                
+
                 dlx_dx, dlx_dy = ct / rx_s, st / rx_s
                 dly_dx, dly_dy = -st / ry_s, ct / ry_s
-                
+
                 dC_dx = (lx * dlx_dx + ly * dly_dx) / ldists
                 dC_dy = (lx * dlx_dy + ly * dly_dy) / ldists
-                
+
                 Jac[idx : idx+self.N, 0::2] = dC_dx[:, None] * self.M
                 Jac[idx : idx+self.N, 1::2] = dC_dy[:, None] * self.M
-                
+
             else:
                 odists = np.hypot(odx, ody)
                 odists[odists < 1e-6] = 1e-6
-                
+
                 C[idx : idx+self.N] = odists - (obs.radius + self.safety_margin)
                 Jac[idx : idx+self.N, 0::2] = (odx / odists)[:, None] * self.M
                 Jac[idx : idx+self.N, 1::2] = (ody / odists)[:, None] * self.M
-                
+
             idx += self.N
-            
+
         C[idx] = self.d_max - dists[-1]
         Jac[idx, 0::2] = -dx_over_d[-1] * self.M[-1, :]
         Jac[idx, 1::2] = -dy_over_d[-1] * self.M[-1, :]
-        
+
         return C, Jac
 
     def _solve_mpc(self, drone_xy_vel, evader_traj):
@@ -292,7 +282,7 @@ class FastOcclusionMPC:
     def _shift_warm_start(self, u_opt):
         u_shifted = np.empty_like(u_opt)
         u_shifted[:-2] = u_opt[2:]
-        u_shifted[-2:] = u_opt[-2:] 
+        u_shifted[-2:] = u_opt[-2:]
         self._u_prev = u_shifted
 
     def _fallback(self, drone_xy_vel, evader_xy, bad_u):

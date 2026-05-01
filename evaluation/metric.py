@@ -1,6 +1,3 @@
-# evaluation/metric.py
-# Generates a PDF metric report from a simulation log CSV.
-#
 # Usage:
 #   python evaluation/metric.py results/log_20260422_204007.csv
 
@@ -17,10 +14,6 @@ from matplotlib.backends.backend_pdf import PdfPages
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
 
 def load_log(csv_path):
     with open(csv_path, newline="") as f:
@@ -46,10 +39,6 @@ def load_log(csv_path):
     }
 
 
-# ---------------------------------------------------------------------------
-# Stats helpers
-# ---------------------------------------------------------------------------
-
 def stats(values, skip_none=True):
     v = [x for x in values if x is not None] if skip_none else values
     if not v:
@@ -70,19 +59,11 @@ def accel_cost_score(ax_col, ay_col, dt):
     return float(np.mean(mags_sq)) if mags_sq else float("nan")
 
 
-# ---------------------------------------------------------------------------
-# Output path
-# ---------------------------------------------------------------------------
-
 def make_report_path(log_path):
-    base = os.path.splitext(os.path.basename(log_path))[0]  # e.g. log_20260422_204007
+    base = os.path.splitext(os.path.basename(log_path))[0]
     report_name = base.replace("log", "metric", 1) + ".pdf"
     return os.path.join(project_root, "evaluation", report_name)
 
-
-# ---------------------------------------------------------------------------
-# Plotting
-# ---------------------------------------------------------------------------
 
 BLUE   = "#2563EB"
 RED    = "#DC2626"
@@ -128,10 +109,6 @@ def plot_acceleration(ax, t, ax_col, ay_col, mags):
     _style_ax(ax, "Drone Acceleration", "Time (s)", "Acceleration (m/s²)")
 
 
-# ---------------------------------------------------------------------------
-# Summary text page
-# ---------------------------------------------------------------------------
-
 def make_summary_text(data, dt, log_path):
     n = len(data["timestep"])
     duration = data["sim_time_s"][-1] if data["sim_time_s"] else 0.0
@@ -176,10 +153,6 @@ def make_summary_text(data, dt, log_path):
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main():
     parser = argparse.ArgumentParser(description="Generate a metric report from a simulation log.")
     parser.add_argument("log", help="Path to the CSV log file")
@@ -203,7 +176,6 @@ def main():
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
 
     with PdfPages(report_path) as pdf:
-        # --- Page 1: Summary stats ---
         fig_s, ax_s = plt.subplots(figsize=(8.5, 11))
         ax_s.axis("off")
         summary = make_summary_text(data, dt, log_path)
@@ -214,7 +186,6 @@ def main():
         pdf.savefig(fig_s, bbox_inches="tight")
         plt.close(fig_s)
 
-        # --- Page 2: Four plots ---
         fig, axes = plt.subplots(2, 2, figsize=(11, 8.5))
         fig.suptitle(f"Metric Plots — {os.path.basename(log_path)}", fontsize=11, fontweight="bold")
         fig.subplots_adjust(hspace=0.38, wspace=0.32, left=0.08, right=0.97, top=0.92, bottom=0.08)

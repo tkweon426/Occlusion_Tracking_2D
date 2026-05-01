@@ -1,4 +1,3 @@
-# predictors/velacc_predictor.py
 import numpy as np
 
 
@@ -39,7 +38,7 @@ class VelAccPredictor:
         self._vel = np.zeros(2)
         self._prev_vel = None
         self._acc = np.zeros(2)
-        self._vel_sample_count = 0  # counts how many velocity estimates we have
+        self._vel_sample_count = 0
 
     def predict(self, pos_xy, horizon_dt, N):
         """
@@ -77,7 +76,6 @@ class VelAccPredictor:
 
         self._prev_pos = pos.copy()
 
-        # Constant-acceleration rollout: x(k) = pos + v*t + 0.5*a*t^2
         steps = np.arange(N + 1, dtype=float)
         t = steps * horizon_dt
         traj = (

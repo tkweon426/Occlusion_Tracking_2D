@@ -1,5 +1,3 @@
-# main.py
-
 import argparse
 import csv
 import json
@@ -29,16 +27,13 @@ def main():
     )
     cli = parser.parse_args()
 
-    # Resolve default log filename with timestamp so repeated runs don't overwrite
     if cli.log is not None and cli.log == "results/log.csv":
         cli.log = f"results/log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
-    # Ensure results/ directory exists
     os.makedirs("results", exist_ok=True)
 
     dt = args.DT
 
-    # Initialize components
     drone = TopDownQuadrotor(x=args.DRONE_START[0], y=args.DRONE_START[1],
                              mass=args.DRONE_MASS, I_zz=args.DRONE_I_ZZ)
     evader = Evader(x=args.EVADER_START[0], y=args.EVADER_START[1])
@@ -46,7 +41,6 @@ def main():
                                scale=args.RENDERER_SCALE)
     env = args.ENV_FACTORY()
 
-    # Clock to manage simulation speed
     clock = pygame.time.Clock()
 
     scripted = args.EVADER_CONTROLLER  # None → keyboard, object → scripted
@@ -75,7 +69,6 @@ def main():
     step = 0
 
     while running:
-        # 1. Handle Window Events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -84,7 +77,6 @@ def main():
                     running = False
 
         if not collided:
-            # 2. Get evader velocity from keyboard or scripted trajectory
             if scripted is None:
                 keys = pygame.key.get_pressed()
                 vx, vy = 0.0, 0.0
@@ -95,12 +87,10 @@ def main():
             else:
                 vx, vy = scripted.get_velocity(evader.state)
 
-            # 3. Control Logic for Drone (timed)
             t_ctrl_start = time.perf_counter()
             drone_action = args.CONTROLLER(drone.state, evader.state)
             t_ctrl_elapsed = time.perf_counter() - t_ctrl_start
 
-            # Compute drone accelerations from action and current state (for logging)
             if logging_enabled:
                 theta, phi, tau_z_cmd = drone_action
                 g = 9.81
@@ -109,11 +99,9 @@ def main():
                 ay = g * (np.tan(theta) * np.sin(psi) + np.tan(phi) * np.cos(psi))
                 psi_ddot = tau_z_cmd / drone.I_zz
 
-            # 4. Step Physics
             evader.step(vx, vy, dt)
             drone.step(drone_action, dt)
 
-            # 5. Collision Check
             if env.check_collision(drone.state[0], drone.state[1], args.DRONE_RADIUS):
                 collided = True
                 collision_msg = "DRONE COLLISION"
@@ -121,7 +109,6 @@ def main():
                 collided = True
                 collision_msg = "EVADER COLLISION"
 
-            # Log this timestep
             if logging_enabled:
                 pred_traj = getattr(args.CONTROLLER, "last_evader_traj", None)
                 pred_next     = pred_traj[1]  if (pred_traj is not None and len(pred_traj) > 1) else (None, None)
@@ -163,10 +150,8 @@ def main():
                     "pred_horizon_full":    horizon_full,
                 })
 
-        # 6. Render
         renderer.draw(drone.state, evader.state, env=env, collision_msg=collision_msg)
 
-        # 6b. Capture frame if recording (sample at VIDEO_FPS, not sim rate)
         if recording:
             frame_timer += dt
             if frame_timer >= 1.0 / VIDEO_FPS:
@@ -175,17 +160,14 @@ def main():
                 frame = pygame.surfarray.array3d(renderer.screen).transpose(1, 0, 2)
                 frames.append(frame)
 
-        # 7. Enforce timestep (runs the loop at roughly 1/dt frames per second)
         clock.tick(int(1 / dt))
         step += 1
 
         if cli.end is not None and step >= cli.end:
             running = False
 
-    # Clean up and close window
     renderer.quit()
 
-    # Save log if requested
     if logging_enabled and log_rows:
         print(f"Saving log with {len(log_rows)} rows to: {cli.log}")
         with open(cli.log, "w", newline="") as f:
@@ -194,7 +176,6 @@ def main():
             writer.writerows(log_rows)
         print(f"Log saved.")
 
-    # Save video if requested
     if recording and frames:
         import imageio
         print(f"Saving {len(frames)} frames at {VIDEO_FPS} fps...")
